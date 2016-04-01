@@ -1,0 +1,42 @@
+#!/usr/bin/env Rscript
+if (!require("pacman")) install.packages("pacman", repos = "https://cloud.r-project.org/")
+pacman::p_load(argparse, ggplot2, dplyr)
+
+# Parse arguments.
+parser <- ArgumentParser(description = 'Plot a comparison between multiple coverage files produced by halStats --coverage')
+parser$add_argument('--output', help = 'Output PDF file', default = 'coverage.pdf')
+parser$add_argument('--labels', nargs = '+', help = 'Labels for each input file')
+parser$add_argument('coverage', nargs = '+', help = 'Coverage files')
+parser$add_argument('--cladeMap', help = 'Clade map file describing how to group the genomes')
+
+args <- parser$parse_args()
+
+# Parse the coverage files.
+coverage_dfs <- sapply(args$coverage, function(x) { read.csv(x, header=T) })
+coverage_df <- bind_rows(coverage_dfs, .id = "Alignment")
+
+ref_genome <- coverage_df$Genome[0]
+ref_genome_len <- coverage_df$sitesMapped1Times[0]
+
+# Apply the labels, if any
+if (!is.null(args$labels)) {
+    file_to_label <- data.frame(filename=args$coverage, label=args$labels)
+    matching_rows <- match(coverage_df$Alignment, file_to_label$filename)
+    coverage_df$Alignment <- file_to_label[matching_rows, ]$label
+}
+
+# Apply the clade grouping, if any
+if (!is.null(args$cladeMap)) {
+    cladeMap <- read.table(args$cladeMap, sep="\t", header=T)
+    coverage_df <- left_join(coverage_df, cladeMap, by = "Genome")
+}
+
+p <- ggplot(coverage_df, aes(x=Alignment, y=sitesCovered1Times, group=Genome))
+if (!is.null(args$cladeMap)) {
+    p <- p + geom_line(aes(color=Clade))
+} else {
+    p <- p + geom_line()
+}
+p <- p + theme_classic()
+ggsave(args$output, p)
+
