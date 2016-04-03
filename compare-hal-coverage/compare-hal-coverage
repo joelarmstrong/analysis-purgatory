@@ -15,8 +15,9 @@ args <- parser$parse_args()
 coverage_dfs <- sapply(args$coverage, function(x) { read.csv(x, header=T) })
 coverage_df <- bind_rows(coverage_dfs, .id = "Alignment")
 
-ref_genome <- coverage_df$Genome[0]
-ref_genome_len <- coverage_df$sitesMapped1Times[0]
+ref_genome <- coverage_df$Genome[1]
+ref_genome_len <- coverage_df$"sitesCovered1Times"[1]
+coverage_df$PercentCoverage <- coverage_df$"sitesCovered1Times" / ref_genome_len * 100
 
 # Apply the labels, if any
 if (!is.null(args$labels)) {
@@ -31,12 +32,13 @@ if (!is.null(args$cladeMap)) {
     coverage_df <- left_join(coverage_df, cladeMap, by = "Genome")
 }
 
-p <- ggplot(coverage_df, aes(x=Alignment, y=sitesCovered1Times, group=Genome))
+p <- ggplot(coverage_df, aes(x=Alignment, y=PercentCoverage, group=Genome))
 if (!is.null(args$cladeMap)) {
     p <- p + geom_line(aes(color=Clade))
 } else {
     p <- p + geom_line()
 }
+p <- p + ylab(paste("Percent coverage on", ref_genome))
 p <- p + theme_classic()
 ggsave(args$output, p)
 
