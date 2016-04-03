@@ -38,6 +38,7 @@ if (!is.null(args$cladeMap)) {
 } else {
     p <- p + geom_line()
 }
+p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
 p <- p + ylab(paste("Percent coverage on", ref_genome))
 p <- p + theme_classic()
 ggsave(args$output, p)
