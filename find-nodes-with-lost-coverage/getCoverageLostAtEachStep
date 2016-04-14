@@ -1,0 +1,34 @@
+#!/bin/sh
+set -o errexit
+set -o nounset
+set -o pipefail
+
+usage() {
+    echo "Usage: $0 halGood halBad queryGenome targetGenome"
+    echo
+    echo "Calculates the coverage from targetGenome on queryGenome in halGood"
+    echo "lost at each intermediate node along the path between them in halBad."
+}
+
+if [ $# -ne 4 ]; then
+    usage
+    exit 1
+fi
+
+HAL_GOOD=$1
+HAL_BAD=$2
+QUERY_GENOME=$3
+TARGET_GENOME=$4
+
+MYTMP=$(mktemp -d)
+
+halStats --bedSequences ${TARGET_GENOME} "${HAL_GOOD}" > "${MYTMP}/target.bed"
+halLiftover --inMemory "${HAL_GOOD}" ${TARGET_GENOME} "${MYTMP}/target.bed" ${QUERY_GENOME} "${MYTMP}/${QUERY_GENOME}.bed"
+
+PATH_GENOMES=($(halStats --spanRoot "${QUERY_GENOME},${TARGET_GENOME}" "${HAL_BAD}"))
+for (( i = 0; i < ${#PATH_GENOMES[*]} - 1; i++ )); do
+    CUR=${PATH_GENOMES[$i]}
+    NEXT=${PATH_GENOMES[$i + 1]}
+    halLiftover --inMemory "${HAL_BAD}" $CUR "${MYTMP}/${CUR}.bed" $NEXT "${MYTMP}/${NEXT}.bed"
+done
+rm -fr "${MYTMP}"
