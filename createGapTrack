@@ -1,0 +1,21 @@
+#!/usr/bin/env python
+"""Quick-n-dirty script to create a BED file indicating gaps, for use as
+a custom track on assemblies that don't have a proper gap track."""
+import re
+from argparse import ArgumentParser
+from sonLib.bioio import fastaRead
+
+def findGaps(sequence):
+    for match in re.finditer(r'[Nn]+', sequence):
+        yield (match.start(), match.end())
+
+def main():
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument('fasta', help='fasta file')
+    opts = parser.parse_args()
+    for header, sequence in fastaRead(opts.fasta):
+        for gapStart, gapEnd in findGaps(sequence):
+            print '%s\t%s\t%s' % (header, gapStart, gapEnd)
+
+if __name__ == '__main__':
+    main()
