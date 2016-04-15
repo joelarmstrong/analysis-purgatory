@@ -23,12 +23,20 @@ TARGET_GENOME=$4
 MYTMP=$(mktemp -d)
 
 halStats --bedSequences ${TARGET_GENOME} "${HAL_GOOD}" > "${MYTMP}/target.bed"
-halLiftover --inMemory "${HAL_GOOD}" ${TARGET_GENOME} "${MYTMP}/target.bed" ${QUERY_GENOME} "${MYTMP}/${QUERY_GENOME}.bed"
+halLiftover --inMemory "${HAL_GOOD}" ${TARGET_GENOME} "${MYTMP}/target.bed" ${QUERY_GENOME} /dev/stdout | bedtools sort | bedtools merge -i - > "${QUERY_GENOME}.bed"
 
 PATH_GENOMES=($(halStats --spanRoot "${QUERY_GENOME},${TARGET_GENOME}" "${HAL_BAD}"))
 for (( i = 0; i < ${#PATH_GENOMES[*]} - 1; i++ )); do
     CUR=${PATH_GENOMES[$i]}
     NEXT=${PATH_GENOMES[$i + 1]}
-    halLiftover --inMemory "${HAL_BAD}" $CUR "${MYTMP}/${CUR}.bed" $NEXT "${MYTMP}/${NEXT}.bed"
+    halLiftover --inMemory "${HAL_BAD}" $CUR "${CUR}.bed" $NEXT /dev/stdout | bedtools sort | bedtools merge -i - > "${NEXT}.bed"
 done
 rm -fr "${MYTMP}"
+
+TOTAL_COVERAGE=$(awk '{total += $3 - $2} END {print total}' ${QUERY_GENOME}.bed)
+PREV_COVERAGE=$TOTAL_COVERAGE
+for GENOME in ${PATH_GENOMES[*]}; do
+    COVERAGE=$(awk '{total += $3 - $2} END {print total}' ${GENOME}.bed)
+    awk "END {print \"$GENOME\", $PREV_COVERAGE - $COVERAGE}" < /dev/null >> coverageLostAtEachStep
+    PREV_COVERAGE=$COVERAGE
+done
