@@ -33,6 +33,7 @@ for (( i = 0; i < ${#PATH_GENOMES[*]} - 1; i++ )); do
 done
 rm -fr "${MYTMP}"
 
+echo "ParentGenome CoverageLost" > coverageLostAtEachStep
 TOTAL_COVERAGE=$(awk '{total += $3 - $2} END {print total}' ${QUERY_GENOME}.bed)
 PREV_COVERAGE=$TOTAL_COVERAGE
 for GENOME in ${PATH_GENOMES[*]}; do
