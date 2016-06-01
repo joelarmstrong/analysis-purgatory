@@ -114,7 +114,6 @@ def main():
         for gapStart, gapEnd in findGaps(sequence):
             beforeGap = sequence[max(0, gapStart - opts.maxSize):gapStart].upper()
             afterGap = sequence[gapEnd:min(len(sequence), gapEnd + opts.maxSize)].upper()
-            print gapStart, gapEnd, len(beforeGap), len(afterGap)
             if len(beforeGap) < 5 or len(afterGap) < 5:
                 # N at the end/beginning of a sequence, without enough
                 # information on one or both ends to be useful
