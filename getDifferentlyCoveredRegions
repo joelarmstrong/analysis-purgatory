@@ -1,0 +1,31 @@
+#!/bin/sh
+set -o errexit
+set -o nounset
+set -o pipefail
+
+if [ $# -ne 4 ]; then
+    echo "Usage: $0 refGenome targetGenome hal1 hal2"
+    echo "Displays regions in targetGenome covered (by refGenome) in hal1 that are not covered in hal2".
+    exit 1
+fi
+
+REF_GENOME=$1
+TARGET_GENOME=$2
+HAL1=$3
+HAL2=$4
+
+MYTMP=$(mktemp -d)
+
+halStats --chromSizes "$TARGET_GENOME" "$HAL1" > "$MYTMP"/chrom.sizes
+
+for HAL in "$HAL1" "$HAL2"; do
+    (halStats --bedSequences "$REF_GENOME" "$HAL" > "$MYTMP"/ref_"$(basename "$HAL")".bed
+    halLiftover "$HAL" "$REF_GENOME" "$MYTMP"/ref_"$(basename "$HAL")".bed "$TARGET_GENOME" "$MYTMP"/target_"$(basename "$HAL")".bed
+    bedtools sort -i "$MYTMP"/target_"$(basename "$HAL")".bed | bedtools complement -i /dev/stdin -g "$MYTMP"/chrom.sizes > "$MYTMP"/"$(basename "$HAL")".bed) &
+done
+
+wait
+
+bedtools subtract -a "$MYTMP"/"$(basename "$HAL1")".bed -b "$MYTMP"/"$(basename "$HAL2")".bed
+
+rm -fr "$MYTMP"
