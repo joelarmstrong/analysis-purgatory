@@ -8,7 +8,8 @@ parser$add_argument('--output', help = 'Output PDF file', default = 'coverage.pd
 parser$add_argument('--labels', nargs = '+', help = 'Labels for each input file')
 parser$add_argument('coverage', nargs = '+', help = 'Coverage files')
 parser$add_argument('--cladeMap', help = 'Clade map file describing how to group the genomes')
-
+parser$add_argument('--bar', action = 'store_true', default = F, help = 'Create a faceted bar graph instead of line graph')
+parser$add_argument('--scatterplot', action = 'store_true', default = F, help = 'Create a faceted scatterplot instead of line graph')
 args <- parser$parse_args()
 
 # Parse the coverage files.
@@ -32,14 +33,26 @@ if (!is.null(args$cladeMap)) {
     coverage_df <- left_join(coverage_df, cladeMap, by = "Genome")
 }
 
-p <- ggplot(coverage_df, aes(x=Alignment, y=PercentCoverage, group=Genome))
-if (!is.null(args$cladeMap)) {
-    p <- p + geom_line(aes(color=Clade))
-} else {
-    p <- p + geom_line()
-}
-p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
-p <- p + ylab(paste("Percent coverage on", ref_genome))
+p <- ggplot(coverage_df, aes(x=Alignment, y=PercentCoverage))
 p <- p + theme_classic()
+if (args$bar) {
+    p <- p + facet_wrap( ~ Genome)
+    p <- p + geom_bar(position="dodge", stat="identity")
+    p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
+    p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
+} else if (args$scatterplot) {
+    p <- p + facet_wrap( ~ Genome, scales="free_y")
+    p <- p + geom_point()
+    p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
+    p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
+} else {
+    if (!is.null(args$cladeMap)) {
+        p <- p + geom_line(aes(color=Clade, group=Genome))
+    } else {
+        p <- p + geom_line(group=Genome)
+    }
+    p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
+    p <- p + ylab(paste("Percent coverage on", ref_genome))
+}
 ggsave(args$output, p)
 
