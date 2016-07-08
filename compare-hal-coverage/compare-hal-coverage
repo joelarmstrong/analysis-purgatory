@@ -10,6 +10,7 @@ parser$add_argument('coverage', nargs = '+', help = 'Coverage files')
 parser$add_argument('--cladeMap', help = 'Clade map file describing how to group the genomes')
 parser$add_argument('--bar', action = 'store_true', default = F, help = 'Create a faceted bar graph instead of line graph')
 parser$add_argument('--scatterplot', action = 'store_true', default = F, help = 'Create a faceted scatterplot instead of line graph')
+parser$add_argument('--differential', action = 'store_true', default = F, help = 'Plot the differential, with respect to the first coverage file, of the other coverage files')
 args <- parser$parse_args()
 
 # Parse the coverage files.
@@ -40,11 +41,25 @@ if (args$bar) {
     p <- p + geom_bar(position="dodge", stat="identity")
     p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
+    p <- p + ylab(paste("Percent coverage on", ref_genome))
 } else if (args$scatterplot) {
     p <- p + facet_wrap( ~ Genome, scales="free_y")
     p <- p + geom_point()
     p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
+    p <- p + ylab(paste("Percent coverage on", ref_genome))
+} else if (args$differential) {
+    first_alignment_name <- args$label[[1]]
+    first_alignment_coverage <- coverage_df %>% group_by(Genome) %>% subset(Alignment == first_alignment_name) %>% summarize(firstAlignmentPercentCoverage=first(PercentCoverage))
+    coverage_df <- left_join(coverage_df, first_alignment_coverage, by="Genome")
+    coverage_df <- subset(coverage_df, Alignment != first_alignment_name & Genome != ref_genome)
+    coverage_df$DifferentialPercentCoverage <- coverage_df$PercentCoverage - coverage_df$firstAlignmentPercentCoverage
+    p <- ggplot(coverage_df, aes(x=Genome, y=DifferentialPercentCoverage, fill=Alignment)) + theme_classic()
+    p <- p + geom_bar(position="dodge", stat="identity", width=rel(0.5))
+    p <- p + scale_fill_brewer(type="qual", palette="Dark2")
+    p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
+    p <- p + ylab(paste("Difference in percent coverage relative to", first_alignment_name))
+    p <- p + ggtitle(paste("Differential coverage on genome", ref_genome))
 } else {
     if (!is.null(args$cladeMap)) {
         p <- p + geom_line(aes(color=Clade, group=Genome))
