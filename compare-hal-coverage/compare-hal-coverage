@@ -13,7 +13,7 @@ parser$add_argument('--scatterplot', action = 'store_true', default = F, help = 
 args <- parser$parse_args()
 
 # Parse the coverage files.
-coverage_dfs <- sapply(args$coverage, function(x) { read.csv(x, header=T) })
+coverage_dfs <- sapply(args$coverage, function(x) { read.csv(x, header=T) }, simplify=F)
 coverage_df <- bind_rows(coverage_dfs, .id = "Alignment")
 
 ref_genome <- coverage_df$Genome[1]
