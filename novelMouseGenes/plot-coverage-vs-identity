@@ -1,0 +1,35 @@
+#!/usr/bin/env Rscript
+if (!require("pacman")) install.packages("pacman", repos = "https://cloud.r-project.org/")
+pacman::p_load(argparse, ggplot2, dplyr)
+
+# Parse arguments.
+parser <- ArgumentParser(description = 'Plot coverage vs. identity for LASTZ --format=mapping output files')
+parser$add_argument('--output', help = 'Output PDF file', default = 'output.pdf')
+parser$add_argument('--labels', nargs = '+', help = 'Labels for each input file')
+parser$add_argument('mapping', nargs = '+', help = 'lastz mapping files')
+parser$add_argument('--jitter', type = 'double', help = 'Amount to jitter the scatterplot', default = 2)
+parser$add_argument('--title', help = 'Title for the plot')
+args <- parser$parse_args()
+
+dfs <- sapply(args$mapping, function(x) { read.table(x, header=T, comment.char="") }, simplify=F)
+df <- bind_rows(dfs, .id = 'target')
+# Convert the columns that read "100%", "98%", etc. to numbers between 0-100
+df$idPct <- as.numeric(sub("%", "", df$idPct))
+df$covPct <- as.numeric(sub("%", "", df$covPct))
+
+# Apply the labels, if provided
+if (!is.null(args$labels)) {
+    file_to_label <- data.frame(filename=args$mapping, label=args$labels)
+    matching_rows <- match(df$target, file_to_label$filename)
+    df$target <- file_to_label[matching_rows, ]$label
+}
+
+# Plot
+p <- ggplot(df, aes(x=covPct, y=idPct, color=target))
+p <- p + theme_classic()
+p <- p + geom_point(position=position_jitter(width=args$jitter, height=args$jitter), alpha=0.9, size=rel(0.3))
+p <- p + scale_color_brewer(type='qual', palette='Dark2')
+if (!is.null(args$title)) {
+    p <- p + ggtitle(args$title)
+}
+ggsave(args$output, p)
