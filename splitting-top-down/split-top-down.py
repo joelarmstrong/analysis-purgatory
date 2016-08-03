@@ -7,6 +7,7 @@ reference-orthologous blocks.
 from argparse import ArgumentParser
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import OneHotEncoder
+from kmodes.kmodes import KModes
 import numpy as np
 from sonLib.bioio import fastaRead
 
@@ -32,7 +33,7 @@ def seqs_to_columns(seqs, seq_order):
             columns[i].append(char)
     return columns
 
-def columns_to_matrix(cols):
+def columns_to_matrix(cols, one_hot_encode=True):
     def nuc_to_number(nucleotide):
         nucleotide = nucleotide.lower()
         if nucleotide == 'a':
@@ -53,13 +54,23 @@ def columns_to_matrix(cols):
 
 def parse_args():
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument('fasta')
-    parser.add_argument('species_tree')
-    parser.add_argument('reference')
+    parser.add_argument('fasta', help='fasta file (all sequences must have the '
+                        'same length')
+    parser.add_argument('species-tree', help='species tree')
+    parser.add_argument('reference', help='reference species')
+    parser.add_argument('--cluster-method',
+                        choices=['k-means', 'k-modes'],
+                        default='k-means',
+                        help='Clustering method to use')
     return parser.parse_args()
 
-def cluster_matrix(matrix):
-    print KMeans(n_clusters=2).fit_predict(matrix)
+def cluster_matrix(matrix, cluster_method):
+    if cluster_method == 'k-means':
+        return KMeans(n_clusters=2).fit_predict(matrix)
+    elif cluster_method == 'k-modes':
+        return KModes(n_clusters=2).fit_predict(matrix.todense())
+    else:
+        raise ArgumentError('Unknown cluster method: %s' % cluster_method)
 
 def main():
     args = parse_args()
@@ -67,8 +78,8 @@ def main():
     seq_names = seqs.keys()
     print repr(seq_names)
     cols = seqs_to_columns(seqs, seq_names)
-    matrix = columns_to_matrix(cols)
-    cluster_matrix(matrix)
+    matrix = columns_to_matrix(cols, one_hot_encode=(args.cluster_method == 'k-means'))
+    print cluster_matrix(matrix, args.cluster_method)
 
 if __name__ == '__main__':
     main()
