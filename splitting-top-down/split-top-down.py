@@ -11,6 +11,7 @@ Requires:
 - sonLib
 """
 from argparse import ArgumentParser
+import itertools
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import OneHotEncoder
 from kmodes.kmodes import KModes
@@ -69,6 +70,10 @@ def parse_args():
                         choices=['k-means', 'k-modes'],
                         default='k-means',
                         help='Clustering method to use')
+    parser.add_argument('--evaluation-method',
+                        choices=['split-decomposition'],
+                        default='split-decomposition',
+                        help='Method to evaluate the splits')
     return parser.parse_args()
 
 def cluster_matrix(matrix, cluster_method):
@@ -78,6 +83,21 @@ def cluster_matrix(matrix, cluster_method):
         return KModes(n_clusters=2).fit_predict(matrix.todense())
     else:
         raise ArgumentError('Unknown cluster method: %s' % cluster_method)
+
+def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False):
+    for i, j in itertools.combinations(split1, 2):
+        for k, l in itertools.combinations(split2, 2):
+            intra = matrix[i, j] + matrix[k, l]
+            inter1 = matrix[i, k] + matrix[j, l]
+            inter2 = matrix[i, l] + matrix[j, k]
+            if relaxed:
+                if intra > inter1 and intra > inter2:
+                    return False
+            else:
+                if intra > inter1 or intra > inter2:
+                    return False
+
+    return True
 
 def build_tree_topdown(columns, seq_names, cluster_method):
     def is_finished(cluster, columns):
