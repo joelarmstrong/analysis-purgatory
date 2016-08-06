@@ -71,8 +71,8 @@ def parse_args():
                         default='k-means',
                         help='Clustering method to use')
     parser.add_argument('--evaluation-method',
-                        choices=['split-decomposition'],
-                        default='split-decomposition',
+                        choices=['split-decomposition', 'none'],
+                        default='none',
                         help='Method to evaluate the splits')
     return parser.parse_args()
 
@@ -84,7 +84,26 @@ def cluster_matrix(matrix, cluster_method):
     else:
         raise ArgumentError('Unknown cluster method: %s' % cluster_method)
 
+def distance_matrix_from_columns(columns):
+    num_seqs = len(columns[0])
+    matrix = np.zeros([num_seqs, num_seqs], dtype=int)
+    for column in columns:
+        for i, entry_1 in enumerate(column):
+            for j in xrange(i + 1, len(column)):
+                entry_2 = column[j]
+                if entry_1.lower() != entry_2.lower():
+                    matrix[i, j] += 1
+                    matrix[j, i] += 1
+    return np.true_divide(matrix, len(columns))
+
 def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False):
+    """Tests whether a split satisfies the d-split criterion of Bandelt
+    and Dress 1992.
+
+    The "relaxed" version is the same version that is in the paper,
+    where the internal distance may be larger than one of the
+    inter-split distances. Otherwise, it must be smaller than both.
+    """
     for i, j in itertools.combinations(split1, 2):
         for k, l in itertools.combinations(split2, 2):
             intra = matrix[i, j] + matrix[k, l]
@@ -99,12 +118,25 @@ def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False):
 
     return True
 
-def build_tree_topdown(columns, seq_names, cluster_method):
+def is_good_split(cluster_assignments, columns, evaluation_method):
+    assert all([i == 0 or i == 1 for i in cluster_assignments]), \
+        "A valid split should only split into two partitions"
+    if evaluation_method == 'none':
+        return True
+    elif evaluation_method == 'split-decomposition':
+        distance_matrix = distance_matrix_from_columns(columns)
+        split1 = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
+        split2 = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
+        return satisfies_four_point_criterion(distance_matrix, split1, split2)
+
+def build_tree_topdown(columns, seq_names, cluster_method, evaluation_method):
     def is_finished(cluster, columns):
         return len(cluster) <= 2 or all([len(set(column)) == 1 for column in columns])
     def recurse(columns, seq_names):
         matrix = columns_to_matrix(columns, one_hot_encode=(cluster_method == 'k-means'))
         cluster_assignments = cluster_matrix(matrix, cluster_method)
+        if not is_good_split(cluster_assignments, columns, evaluation_method):
+            return Phylo.BaseTree.Clade(clades=map(lambda x: Phylo.BaseTree.Clade(name=x), seq_names))
         cluster0_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
         cluster1_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
         cluster0 = [seq_names[i] for i in cluster0_indices]
@@ -130,7 +162,7 @@ def main():
     seqs = dict(fastaRead(args.fasta))
     seq_names = seqs.keys()
     cols = seqs_to_columns(seqs, seq_names)
-    tree = build_tree_topdown(cols, seq_names, args.cluster_method)
+    tree = build_tree_topdown(cols, seq_names, args.cluster_method, args.evaluation_method)
     Phylo.draw_ascii(tree)
 
 if __name__ == '__main__':
