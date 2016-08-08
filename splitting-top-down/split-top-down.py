@@ -96,15 +96,32 @@ def distance_matrix_from_columns(columns):
                     matrix[j, i] += 1
     return np.true_divide(matrix, len(columns))
 
-def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False):
+def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False,
+                                   enforce_three_point=True):
     """Tests whether a split satisfies the d-split criterion of Bandelt
     and Dress 1992.
 
     The "relaxed" version is the same version that is in the paper,
     where the internal distance may be larger than one of the
     inter-split distances. Otherwise, it must be smaller than both.
+
+    The "enforce_three_point" parameter determines whether to enforce
+    the inter-vs-intra distance comparison even when one side of the
+    split is a singleton. This isn't justified by the tree metric, but
+    may work in practice.
     """
+    if len(split1) < len(split2):
+        # We call split1 the larger split, to simplify the
+        # "enforce_three_point" logic
+        split1, split2 = split2, split1
+
     for i, j in itertools.combinations(split1, 2):
+        if len(split2) == 1 and enforce_three_point:
+            intra = matrix[i, j]
+            k = split2[0]
+            inter = matrix[i, k] + matrix[j, k]
+            if intra > inter:
+                return False
         for k, l in itertools.combinations(split2, 2):
             intra = matrix[i, j] + matrix[k, l]
             inter1 = matrix[i, k] + matrix[j, l]
