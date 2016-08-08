@@ -16,6 +16,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import OneHotEncoder
 from kmodes.kmodes import KModes
 from Bio import Phylo
+from Bio.Phylo.BaseTree import Clade, Tree
 import numpy as np
 from sonLib.bioio import fastaRead
 
@@ -153,24 +154,24 @@ def build_tree_topdown(columns, seq_names, cluster_method, evaluation_method):
         matrix = columns_to_matrix(columns, one_hot_encode=(cluster_method == 'k-means'))
         cluster_assignments = cluster_matrix(matrix, cluster_method)
         if not is_good_split(cluster_assignments, columns, evaluation_method):
-            return Phylo.BaseTree.Clade(clades=map(lambda x: Phylo.BaseTree.Clade(name=x), seq_names))
+            return Clade(clades=map(lambda x: Clade(name=x), seq_names))
         cluster0_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
         cluster1_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
         cluster0 = [seq_names[i] for i in cluster0_indices]
         cluster1 = [seq_names[i] for i in cluster1_indices]
         cluster0_columns = [[column[i] for i in cluster0_indices] for column in columns]
         if is_finished(cluster0, cluster0_columns):
-            clade0 = Phylo.BaseTree.Clade(clades=map(lambda x: Phylo.BaseTree.Clade(name=x), cluster0))
+            clade0 = Clade(clades=map(lambda x: Clade(name=x), cluster0))
         else:
-            clade0 = Phylo.BaseTree.Clade(clades=recurse(cluster0_columns, cluster0))
+            clade0 = Clade(clades=recurse(cluster0_columns, cluster0))
 
         cluster1_columns = [[column[i] for i in cluster1_indices] for column in columns]
         if is_finished(cluster1, cluster1_columns):
-            clade1 = Phylo.BaseTree.Clade(clades=map(lambda x: Phylo.BaseTree.Clade(name=x), cluster1))
+            clade1 = Clade(clades=map(lambda x: Clade(name=x), cluster1))
         else:
-            clade1 = Phylo.BaseTree.Clade(clades=recurse(cluster1_columns, cluster1))
+            clade1 = Clade(clades=recurse(cluster1_columns, cluster1))
         return (clade0, clade1)
-    tree = Phylo.BaseTree.Tree(Phylo.BaseTree.Clade(clades=recurse(columns, seq_names)))
+    tree = Tree(Clade(clades=recurse(columns, seq_names)))
     return tree
 
 def main():
