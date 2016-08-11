@@ -1,12 +1,19 @@
 #!/usr/bin/env python
-from hypothesis import given, assume
-from hypothesis.strategies import builds, floats, sampled_from, composite
 import unittest
+from hypothesis import given, assume
+from hypothesis.strategies import text, builds, floats, sampled_from, composite
+from Bio import Phylo
+from StringIO import StringIO
 from simulator import GeneralizedReversibleSimulator
 
 # random data strategies
 probability = floats(min_value=0.0, max_value=1.0)
 non_zero_probability = floats(min_value=0.01, max_value=1.0)
+random_DNA = text(alphabet=['A', 'a', 'C', 'c', 'G', 'g', 'T', 't'])
+# We need to use only somewhat realistic distances, because the
+# matrix exponential is only approximate and becomes
+# inaccurate at very high distances.
+random_distance = floats(min_value=0.0, max_value=500000)
 @composite
 def randomGRT(draw):
     frac_a = draw(non_zero_probability)
@@ -81,17 +88,25 @@ class GRTSimulatorTest(unittest.TestCase):
             initial_probability = self.default_sim.probability(char, char, 1.0)
             self.assertGreater(sim.probability(char, char, 1.0), initial_probability)
 
-    @given(randomGRT(),
-           sampled_from(['A', 'C', 'G', 'T']),
-           # We need to use only somewhat realistic distances, because the
-           # matrix exponential is only approximate and becomes
-           # inaccurate at very high distances.
-           floats(min_value=0.0, max_value=500000))
+    @given(randomGRT(), sampled_from(['A', 'C', 'G', 'T']), random_distance)
     def test_probability_sums_to_1(self, sim, char, distance):
         """Test that the probability from a character to all characters sums to 1.0."""
         assume(distance > 0)
         total_probability = sim.probability(char, 'A', distance) + sim.probability(char, 'C', distance) + sim.probability(char, 'G', distance) + sim.probability(char, 'T', distance)
         self.assertAlmostEqual(total_probability, 1.0)
+
+    @given(randomGRT(), random_DNA, random_distance)
+    def test_mutate_gives_same_length_sequence(self, sim, sequence, distance):
+        mutated = sim.mutate(sequence, distance)
+        self.assertEqual(len(mutated), len(sequence))
+
+    @given(randomGRT(), random_DNA)
+    def test_generate_leaf_sequences_gives_same_length_sequence(self, sim, sequence):
+        species_tree = Phylo.read(StringIO('((((HUMAN:0.006969, CHIMP:0.009727):0.025291, RHESUS:0.044568):0.11,(MOUSE:0.072818, RAT:0.081244):0.260342):0.023260,((DOG:0.07, CAT:0.07):0.087381,((PIG:0.06, COW:0.06):0.104728,HORSE:0.05):0.05):0.04);'), 'newick')
+        leaf_sequences = sim.generate_leaf_sequences(species_tree, sequence)
+        self.assertEqual(len(leaf_sequences), 10)
+        self.assertTrue(all([leaf in leaf_sequences for leaf in ['HUMAN', 'CHIMP', 'RHESUS', 'MOUSE', 'RAT', 'DOG', 'CAT', 'PIG', 'COW', 'HORSE']]))
+        self.assertTrue(all([len(leaf_sequence) == len(sequence) for leaf_sequence in leaf_sequences.values()]))
 
 if __name__ == '__main__':
     unittest.main()

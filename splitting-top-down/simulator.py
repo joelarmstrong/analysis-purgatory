@@ -76,6 +76,18 @@ class GeneralizedReversibleSimulator:
             new_seq.append(new_char)
         return "".join(new_seq)
 
+    def generate_leaf_sequences(self, tree, starting_sequence):
+        root = tree.root
+        node_to_sequence = { root: starting_sequence }
+        def recurse(node, sequence, node_to_sequence):
+            assert node_to_sequence[node] == sequence
+            for child in node:
+                child_sequence = self.mutate(sequence, child.branch_length)
+                node_to_sequence[child] = child_sequence
+                recurse(child, child_sequence, node_to_sequence)
+        recurse(root, starting_sequence, node_to_sequence)
+        return dict((node.name, sequence) for (node, sequence) in node_to_sequence.iteritems() if node.is_terminal())
+
     def char_to_index(self, char):
         char = char.lower()
         if char == 'a':
