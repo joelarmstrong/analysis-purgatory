@@ -48,17 +48,18 @@ class BirthDeathSimulator:
         return Tree(Clade(name='root', clades=[recurse(child, child.branch_length, 0) for child in self.species_tree.root]))
 
 class GeneralizedReversibleSimulator:
-    def __init__(self, frac_a, frac_c, frac_g, frac_t, a_c, a_g, a_t, c_g, c_t, g_t):
+    def __init__(self, frac_a, frac_c, frac_g, a_c, a_g, a_t, c_g, c_t, g_t):
+        frac_t = 1.0 - frac_a - frac_c - frac_g
         self.rate_matrix = np.array([[0.0,          frac_c * a_c, frac_g * a_g, frac_t * a_t],
                                      [frac_a * a_c, 0.0,          frac_g * c_g, frac_t * c_t],
                                      [frac_a * a_g, frac_c * c_g, 0.0,          frac_t * g_t],
                                      [frac_a * a_t, frac_c * c_t, frac_g * g_t, 0.0         ]])
         # Calculate the diagonals
         row_sums = self.rate_matrix.sum(axis=1)
-        self.rate_matrix[0, 0] = 1.0 - row_sums[0]
-        self.rate_matrix[1, 1] = 1.0 - row_sums[1]
-        self.rate_matrix[2, 2] = 1.0 - row_sums[2]
-        self.rate_matrix[3, 3] = 1.0 - row_sums[3]
+        self.rate_matrix[0, 0] = -row_sums[0]
+        self.rate_matrix[1, 1] = -row_sums[1]
+        self.rate_matrix[2, 2] = -row_sums[2]
+        self.rate_matrix[3, 3] = -row_sums[3]
 
     def mutate(self, seq, distance):
         matrix = self.compute_probability_matrix(distance)
@@ -113,6 +114,6 @@ if __name__ == '__main__':
     tree = sim.generate()
     print tree
     Phylo.draw_ascii(tree)
-    mutator = GeneralizedReversibleSimulator(frac_a=0.25, frac_c=0.25, frac_g=0.25, frac_t=0.25,
+    mutator = GeneralizedReversibleSimulator(frac_a=0.25, frac_c=0.25, frac_g=0.25,
                                              a_c=0.25, a_g=0.25, a_t=0.25, c_g=0.25, c_t=0.25, g_t=0.25)
     print mutator.mutate('ACGTACGTACGT', 1.0)
