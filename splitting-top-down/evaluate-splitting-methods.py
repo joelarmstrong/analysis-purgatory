@@ -1,8 +1,6 @@
 #!/usr/bin/env python
-"""
-Testing the accuracy of a top-down clustering method using k-means
-clustering, k = 2, for splitting homologous blocks into
-reference-orthologous blocks.
+"""Testing the accuracy of clustering methods for splitting
+homologous blocks into reference-orthologous blocks.
 
 Requires:
 - scikit-learn
@@ -11,7 +9,9 @@ Requires:
 - sonLib
 """
 from argparse import ArgumentParser
+from StringIO import StringIO
 import itertools
+import random
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import OneHotEncoder
 from kmodes.kmodes import KModes
@@ -19,6 +19,7 @@ from Bio import Phylo
 from Bio.Phylo.BaseTree import Clade, Tree
 import numpy as np
 from sonLib.bioio import fastaRead
+from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator
 
 def seqs_to_columns(seqs, seq_order):
     """Transform a dict of sequences into a list of columns.
@@ -63,8 +64,6 @@ def columns_to_matrix(cols, one_hot_encode=True):
 
 def parse_args():
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument('fasta', help='fasta file (all sequences must have the '
-                        'same length')
     parser.add_argument('species_tree', help='species tree (newick format)')
     parser.add_argument('reference', help='reference species')
     parser.add_argument('--cluster-method',
@@ -75,6 +74,18 @@ def parse_args():
                         choices=['split-decomposition', 'none'],
                         default='none',
                         help='Method to evaluate the splits')
+    parser.add_argument('--duplication-rate',
+                        type=float,
+                        default=0.05,
+                        help='Gene duplication rate')
+    parser.add_argument('--loss-rate',
+                        type=float,
+                        default=0.025,
+                        help='Gene loss rate')
+    parser.add_argument('--num-columns',
+                        type=int,
+                        default=200,
+                        help='Number of columns')
     return parser.parse_args()
 
 def cluster_matrix(matrix, cluster_method):
@@ -174,10 +185,21 @@ def build_tree_topdown(columns, seq_names, cluster_method, evaluation_method):
     tree = Tree(Clade(clades=recurse(columns, seq_names)))
     return tree
 
+def random_sequence(length):
+    seq = []
+    for _ in xrange(length):
+        seq.append(random.choice(['A', 'a', 'C', 'c', 'G', 'g', 'T', 't']))
+    return seq
+
 def main():
     args = parse_args()
-    species_tree = Phylo.parse(args.species_tree, 'newick')
-    seqs = dict(fastaRead(args.fasta))
+    species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
+    gene_tree_simulator = BirthDeathSimulator(species_tree,
+                                              args.duplication_rate,
+                                              args.loss_rate)
+    gene_tree = gene_tree_simulator.generate()
+    grt = GeneralizedReversibleSimulator(0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25)
+    seqs = grt.generate_leaf_sequences(gene_tree, random_sequence(args.num_columns))
     seq_names = seqs.keys()
     cols = seqs_to_columns(seqs, seq_names)
     tree = build_tree_topdown(cols, seq_names, args.cluster_method, args.evaluation_method)
