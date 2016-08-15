@@ -175,13 +175,19 @@ def build_tree_topdown(columns, seq_names, cluster_method, evaluation_method):
         cluster1 = [seq_names[i] for i in cluster1_indices]
         cluster0_columns = [[column[i] for i in cluster0_indices] for column in columns]
         if is_finished(cluster0, cluster0_columns):
-            clade0 = Clade(clades=map(lambda x: Clade(name=x), cluster0))
+            if len(cluster0) == 1:
+                clade0 = Clade(name=cluster0[0])
+            else:
+                clade0 = Clade(clades=map(lambda x: Clade(name=x), cluster0))
         else:
             clade0 = Clade(clades=recurse(cluster0_columns, cluster0))
 
         cluster1_columns = [[column[i] for i in cluster1_indices] for column in columns]
         if is_finished(cluster1, cluster1_columns):
-            clade1 = Clade(clades=map(lambda x: Clade(name=x), cluster1))
+            if len(cluster1) == 1:
+                clade1 = Clade(name=cluster1[0])
+            else:
+                clade1 = Clade(clades=map(lambda x: Clade(name=x), cluster1))
         else:
             clade1 = Clade(clades=recurse(cluster1_columns, cluster1))
         return (clade0, clade1)
