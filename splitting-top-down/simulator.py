@@ -7,6 +7,28 @@ import random
 import sys
 import numpy as np
 
+def get_parent(tree, child_clade):
+    if child_clade == tree.root:
+        return None
+    node_path = tree.root.get_path(child_clade)
+    if len(node_path) < 2:
+        return tree.root
+    return node_path[-2]
+
+def prune_lineages(tree, lineages_to_prune):
+    for lineage in lineages_to_prune:
+        while lineage != None:
+            parent = get_parent(tree, lineage)
+            if parent is None:
+                return Tree()
+            assert lineage in parent
+            parent.clades.remove(lineage)
+            if len(parent.clades) == 0:
+                lineage = parent
+            else:
+                break
+    return tree
+
 class BirthDeathSimulator:
     """A simulator for generating gene trees using a birth-death process."""
     def __init__(self, species_tree, duplication_rate, extinction_rate):
@@ -14,9 +36,9 @@ class BirthDeathSimulator:
         self.duplication_rate = duplication_rate
         self.extinction_rate = extinction_rate
 
-    def generate(self, dt=0.001):
+    def generate(self, dt=0.001, remove_extinct_lineages=True):
         self.max_lineage_num = 0
-        def recurse(child_species, remaining_length, lineage_num):
+        def recurse(child_species, remaining_length, lineage_num, extinct_lineages):
             for time in np.arange(0, remaining_length, dt):
                 # Convert from np.float64 to native python float,
                 # because Bio.Phylo will flip out if float64's are
@@ -30,22 +52,28 @@ class BirthDeathSimulator:
                 # happened, for simplicity.
                 if extinction_occurred:
                     # Lineage is gone
-                    return Clade(name="extinct.%s" % lineage_num, branch_length=time)
+                    extinction = Clade(name="extinct.%s" % lineage_num, branch_length=time)
+                    extinct_lineages.append(extinction)
+                    return extinction
                 elif duplication_occurred:
                     # Lineage splits, add new lineage
                     self.max_lineage_num += 1
                     new_lineage_num = self.max_lineage_num
                     return Clade(branch_length=time,
-                                 clades=[recurse(child_species, remaining_length - time, lineage_num),
-                                         recurse(child_species, remaining_length - time, new_lineage_num)])
+                                 clades=[recurse(child_species, remaining_length - time, lineage_num, extinct_lineages),
+                                         recurse(child_species, remaining_length - time, new_lineage_num, extinct_lineages)])
             if child_species.is_terminal():
                 return Clade(branch_length=remaining_length,
                              name="%s.%s" % (child_species.name, lineage_num))
             else:
                 return Clade(branch_length=remaining_length,
                              name="%s.%s" % (child_species.name, lineage_num),
-                             clades=[recurse(child, child.branch_length, lineage_num) for child in child_species])
-        return Tree(Clade(name='root', clades=[recurse(child, child.branch_length, 0) for child in self.species_tree.root]))
+                             clades=[recurse(child, child.branch_length, lineage_num, extinct_lineages) for child in child_species])
+        extinct_lineages = []
+        gene_tree = Tree(Clade(name='root', clades=[recurse(child, child.branch_length, 0, extinct_lineages) for child in self.species_tree.root]))
+        if remove_extinct_lineages:
+            gene_tree = prune_lineages(gene_tree, extinct_lineages)
+        return gene_tree
 
 class GeneralizedReversibleSimulator:
     def __init__(self, frac_a, frac_c, frac_g, a_c, a_g, a_t, c_g, c_t, g_t):

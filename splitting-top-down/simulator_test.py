@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 import unittest
+import random
 from hypothesis import given, assume
-from hypothesis.strategies import text, builds, floats, sampled_from, composite
+from hypothesis.strategies import text, builds, floats, sampled_from, composite, random_module, integers
 from Bio import Phylo
+from Bio.Phylo.BaseTree import Tree, Clade
 from StringIO import StringIO
-from simulator import GeneralizedReversibleSimulator
+from simulator import GeneralizedReversibleSimulator, BirthDeathSimulator
 
 # random data strategies
 probability = floats(min_value=0.0, max_value=1.0)
@@ -13,7 +15,23 @@ random_DNA = text(alphabet=['A', 'a', 'C', 'c', 'G', 'g', 'T', 't'])
 # We need to use only somewhat realistic distances, because the
 # matrix exponential is only approximate and becomes
 # inaccurate at very high distances.
-random_distance = floats(min_value=0.0, max_value=500000)
+random_distance = floats(min_value=0.0, max_value=5)
+@composite
+def random_tree(draw, max_depth=5):
+    root = draw(random_clade(max_depth=max_depth))
+    root.branch_length = None
+    return Tree(root)
+@composite
+def random_clade(draw, depth=0, max_depth=8):
+    name = draw(text())
+    branch_length = draw(random_distance)
+    children = []
+    if depth < max_depth:
+        num_children = draw(integers(min_value=0, max_value=4))
+        for _ in xrange(num_children):
+            children.append(draw(random_clade(depth=depth+1, max_depth=max_depth)))
+    return Clade(name=name, branch_length=branch_length, clades=children)
+
 @composite
 def randomGRT(draw):
     frac_a = draw(non_zero_probability)
@@ -107,6 +125,23 @@ class GRTSimulatorTest(unittest.TestCase):
         self.assertEqual(len(leaf_sequences), 10)
         self.assertTrue(all([leaf in leaf_sequences for leaf in ['HUMAN', 'CHIMP', 'RHESUS', 'MOUSE', 'RAT', 'DOG', 'CAT', 'PIG', 'COW', 'HORSE']]))
         self.assertTrue(all([len(leaf_sequence) == len(sequence) for leaf_sequence in leaf_sequences.values()]))
+
+class BirthDeathSimulatorTest(unittest.TestCase):
+    @given(random_tree(), probability, probability, random_module())
+    def test_extinct_lineages_are_pruned(self, tree, duplication_rate, loss_rate, random_module):
+        # Duplication rate should be reasonable (if it is high we get
+        # an explosion in gene tree size)
+        assume(duplication_rate < 0.2)
+        seed = random.random()
+        sim = BirthDeathSimulator(tree, duplication_rate, loss_rate)
+        random.seed(seed)
+        tree_with_extinctions = sim.generate(remove_extinct_lineages=False)
+        random.seed(seed)
+        tree_without_extinctions = sim.generate()
+        names_with_extinctions = [node.name for node in tree_with_extinctions.get_terminals() if node != tree_with_extinctions.root]
+        names_without_extinctions = [node.name for node in tree_without_extinctions.get_terminals() if node != tree_without_extinctions.root]
+        self.assertEqual(names_without_extinctions,
+                         [name for name in names_with_extinctions if 'extinct' not in name])
 
 if __name__ == '__main__':
     unittest.main()
