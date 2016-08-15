@@ -76,11 +76,11 @@ def parse_args():
                         help='Method to evaluate the splits')
     parser.add_argument('--duplication-rate',
                         type=float,
-                        default=0.05,
+                        default=0.2,
                         help='Gene duplication rate')
     parser.add_argument('--loss-rate',
                         type=float,
-                        default=0.025,
+                        default=0.1,
                         help='Gene loss rate')
     parser.add_argument('--num-columns',
                         type=int,
@@ -198,11 +198,20 @@ def main():
                                               args.duplication_rate,
                                               args.loss_rate)
     gene_tree = gene_tree_simulator.generate()
+    # Choose the second child of the root as the outgroup for no good reason
+    outgroups = [node.name for node in gene_tree.root[1].get_terminals()]
     grt = GeneralizedReversibleSimulator(0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25)
     seqs = grt.generate_leaf_sequences(gene_tree, random_sequence(args.num_columns))
     seq_names = seqs.keys()
     cols = seqs_to_columns(seqs, seq_names)
     tree = build_tree_topdown(cols, seq_names, args.cluster_method, args.evaluation_method)
+    # workaround for biopython bug.
+    for node in tree.find_clades():
+        node.clades = list(node.clades)
+    print outgroups
+    print [node for node in tree.get_terminals() if node.name in outgroups]
+    tree.root_with_outgroup(*[node for node in tree.get_terminals() if node.name in outgroups])
+    Phylo.draw_ascii(gene_tree)
     Phylo.draw_ascii(tree)
 
 if __name__ == '__main__':
