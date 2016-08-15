@@ -80,12 +80,15 @@ def parse_args():
                         help='Gene duplication rate')
     parser.add_argument('--loss-rate',
                         type=float,
-                        default=0.1,
+                        default=0.05,
                         help='Gene loss rate')
     parser.add_argument('--num-columns',
                         type=int,
                         default=200,
                         help='Number of columns')
+    parser.add_argument('--num-tests',
+                        type=int,
+                        default=100)
     return parser.parse_args()
 
 def cluster_matrix(matrix, cluster_method):
@@ -191,28 +194,54 @@ def random_sequence(length):
         seq.append(random.choice(['A', 'a', 'C', 'c', 'G', 'g', 'T', 't']))
     return seq
 
-def main():
-    args = parse_args()
-    species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
-    gene_tree_simulator = BirthDeathSimulator(species_tree,
-                                              args.duplication_rate,
-                                              args.loss_rate)
-    gene_tree = gene_tree_simulator.generate()
+def generate_and_rebuild_tree(gene_tree_sim, grt_sim, num_columns, cluster_method, evaluation_method):
+    gene_tree = gene_tree_sim.generate()
     # Choose the second child of the root as the outgroup for no good reason
     outgroups = [node.name for node in gene_tree.root[1].get_terminals()]
-    grt = GeneralizedReversibleSimulator(0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25)
-    seqs = grt.generate_leaf_sequences(gene_tree, random_sequence(args.num_columns))
+    seqs = grt_sim.generate_leaf_sequences(gene_tree, random_sequence(num_columns))
     seq_names = seqs.keys()
     cols = seqs_to_columns(seqs, seq_names)
-    tree = build_tree_topdown(cols, seq_names, args.cluster_method, args.evaluation_method)
+    tree = build_tree_topdown(cols, seq_names, cluster_method, evaluation_method)
     # workaround for biopython bug.
     for node in tree.find_clades():
         node.clades = list(node.clades)
-    print outgroups
-    print [node for node in tree.get_terminals() if node.name in outgroups]
     tree.root_with_outgroup(*[node for node in tree.get_terminals() if node.name in outgroups])
     Phylo.draw_ascii(gene_tree)
     Phylo.draw_ascii(tree)
+    return gene_tree, tree
+
+def evaluate_tree(true_tree, test_tree):
+    true_splits = set()
+    for internal_node in true_tree.get_nonterminals():
+        leaf_namess = frozenset([frozenset([node.name for node in node.get_terminals()]) for node in internal_node])
+        true_splits.add(leaf_namess)
+
+    matched_splits = 0
+    missed_splits = 0
+    for internal_node in test_tree.get_nonterminals():
+        leaf_namess = frozenset([frozenset([node.name for node in node.get_terminals()]) for node in internal_node])
+        if leaf_namess in true_splits:
+            print 'Matched split: %s' % repr(leaf_namess)
+            matched_splits += 1
+        else:
+            print 'Missed split: %s' % repr(leaf_namess)
+            print Tree(internal_node)
+            missed_splits += 1
+    print 'Matched splits: %s, missed splits: %s, num true splits: %s' % (matched_splits, missed_splits, len(true_splits))
+
+def main():
+    args = parse_args()
+    species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
+    gene_tree_sim = BirthDeathSimulator(species_tree,
+                                        args.duplication_rate,
+                                        args.loss_rate)
+    grt_sim = GeneralizedReversibleSimulator(0.25, 0.25, 0.25, 0.25,
+                                             0.25, 0.25, 0.25, 0.25, 0.25)
+    for _ in xrange(args.num_tests):
+        true_tree, test_tree = generate_and_rebuild_tree(gene_tree_sim, grt_sim,
+                                                         args.num_columns,
+                                                         args.cluster_method, args.evaluation_method)
+        evaluate_tree(true_tree, test_tree)
 
 if __name__ == '__main__':
     main()
