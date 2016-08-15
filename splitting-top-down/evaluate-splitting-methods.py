@@ -7,6 +7,7 @@ Requires:
 - kmodes
 - biopython
 - sonLib
+- pandas
 """
 from argparse import ArgumentParser
 from StringIO import StringIO
@@ -19,8 +20,12 @@ from kmodes.kmodes import KModes
 from Bio import Phylo
 from Bio.Phylo.BaseTree import Clade, Tree
 import numpy as np
+import pandas as pd
 from sonLib.bioio import fastaRead
 from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator
+
+cluster_methods = ['k-modes', 'k-means']
+evaluation_methods = ['split-decomposition', 'none']
 
 def seqs_to_columns(seqs, seq_order):
     """Transform a dict of sequences into a list of columns.
@@ -66,14 +71,6 @@ def columns_to_matrix(cols, one_hot_encode=True):
 def parse_args():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument('species_tree', help='species tree (newick format)')
-    parser.add_argument('--cluster-method',
-                        choices=['k-means', 'k-modes'],
-                        default='k-means',
-                        help='Clustering method to use')
-    parser.add_argument('--evaluation-method',
-                        choices=['split-decomposition', 'none'],
-                        default='none',
-                        help='Method to evaluate the splits')
     parser.add_argument('--duplication-rate',
                         type=float,
                         default=0.2,
@@ -200,11 +197,12 @@ def random_sequence(length):
         seq.append(random.choice(['A', 'a', 'C', 'c', 'G', 'g', 'T', 't']))
     return seq
 
-def generate_and_rebuild_tree(gene_tree_sim, grt_sim, num_columns, cluster_method, evaluation_method):
+def generate_gene_tree_and_sequences(gene_tree_sim, grt_sim, num_columns):
     gene_tree = gene_tree_sim.generate()
-    # Choose the second child of the root as the outgroup for no good reason
-    outgroups = [node.name for node in gene_tree.root[1].get_terminals()]
     seqs = grt_sim.generate_leaf_sequences(gene_tree, random_sequence(num_columns))
+    return gene_tree, seqs
+
+def build_tree(seqs, cluster_method, evaluation_method, outgroups):
     seq_names = seqs.keys()
     cols = seqs_to_columns(seqs, seq_names)
     tree = build_tree_topdown(cols, seq_names, cluster_method, evaluation_method)
@@ -212,9 +210,7 @@ def generate_and_rebuild_tree(gene_tree_sim, grt_sim, num_columns, cluster_metho
     for node in tree.find_clades():
         node.clades = list(node.clades)
     tree.root_with_outgroup(*[node for node in tree.get_terminals() if node.name in outgroups])
-    Phylo.draw_ascii(gene_tree)
-    Phylo.draw_ascii(tree)
-    return gene_tree, tree
+    return tree
 
 def evaluate_tree(true_tree, test_tree):
     true_leaf_sets = set()
@@ -241,13 +237,16 @@ def evaluate_tree(true_tree, test_tree):
                 if len(true_split) > len(split_sets):
                     overcollapses += 1
                 elif len(true_split) < len(split_sets):
-                    print 'undercollapse: %s %s' % (true_split, split_sets)
                     undercollapses += 1
                 else:
                     wrong_splits += 1
         else:
             mismatching_leaf_sets += 1
-    print 'overcollapses: %s, undercollapses: %s, wrong splits: %s, mismatching sets: %s, perfect splits: %s' % (overcollapses, undercollapses, wrong_splits, mismatching_leaf_sets, perfect_splits)
+    return { 'overcollapses': overcollapses,
+             'undercollapses': undercollapses,
+             'wrong_splits': wrong_splits,
+             'mismatching_leaf_sets': mismatching_leaf_sets,
+             'perfect_splits': perfect_splits}
 
 def main():
     args = parse_args()
@@ -257,11 +256,22 @@ def main():
                                         args.loss_rate)
     grt_sim = GeneralizedReversibleSimulator(0.25, 0.25, 0.25, 0.25,
                                              0.25, 0.25, 0.25, 0.25, 0.25)
+    tree_evaluations = []
     for _ in xrange(args.num_tests):
-        true_tree, test_tree = generate_and_rebuild_tree(gene_tree_sim, grt_sim,
-                                                         args.num_columns,
-                                                         args.cluster_method, args.evaluation_method)
-        evaluate_tree(true_tree, test_tree)
+        true_tree, leaf_seqs = generate_gene_tree_and_sequences(gene_tree_sim, grt_sim,
+                                                                args.num_columns)
+        for cluster_method in cluster_methods:
+            for evaluation_method in evaluation_methods:
+                # Choose the second child of the root as the outgroup for no good reason
+                outgroups = [node.name for node in true_tree.root[1].get_terminals()]
+                built_tree = build_tree(leaf_seqs, cluster_method, evaluation_method, outgroups)
+                evaluation = evaluate_tree(true_tree, built_tree)
+                evaluation['cluster_method'] = cluster_method
+                evaluation['evaluation_method'] = evaluation_method
+                tree_evaluations.append(evaluation)
+
+    df = pd.DataFrame(tree_evaluations)
+    print df.groupby(['cluster_method', 'evaluation_method']).sum()
 
 if __name__ == '__main__':
     main()
