@@ -10,6 +10,7 @@ Requires:
 """
 from argparse import ArgumentParser
 from StringIO import StringIO
+from collections import defaultdict
 import itertools
 import random
 from sklearn.cluster import KMeans
@@ -65,7 +66,6 @@ def columns_to_matrix(cols, one_hot_encode=True):
 def parse_args():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument('species_tree', help='species tree (newick format)')
-    parser.add_argument('reference', help='reference species')
     parser.add_argument('--cluster-method',
                         choices=['k-means', 'k-modes'],
                         default='k-means',
@@ -217,23 +217,37 @@ def generate_and_rebuild_tree(gene_tree_sim, grt_sim, num_columns, cluster_metho
     return gene_tree, tree
 
 def evaluate_tree(true_tree, test_tree):
-    true_splits = set()
+    true_leaf_sets = set()
+    true_splits = {}
     for internal_node in true_tree.get_nonterminals():
-        leaf_namess = frozenset([frozenset([node.name for node in node.get_terminals()]) for node in internal_node])
-        true_splits.add(leaf_namess)
+        leaf_set = frozenset([node.name for node in internal_node.get_terminals()])
+        split_sets = frozenset([frozenset([node.name for node in node.get_terminals()]) for node in internal_node])
+        true_leaf_sets.add(leaf_set)
+        true_splits[leaf_set] = split_sets
 
-    matched_splits = 0
-    missed_splits = 0
+    overcollapses = 0
+    undercollapses = 0
+    wrong_splits = 0
+    mismatching_leaf_sets = 0
+    perfect_splits = 0
     for internal_node in test_tree.get_nonterminals():
-        leaf_namess = frozenset([frozenset([node.name for node in node.get_terminals()]) for node in internal_node])
-        if leaf_namess in true_splits:
-            print 'Matched split: %s' % repr(leaf_namess)
-            matched_splits += 1
+        leaf_set = frozenset([node.name for node in internal_node.get_terminals()])
+        if leaf_set in true_leaf_sets:
+            split_sets = frozenset([frozenset([node.name for node in node.get_terminals()]) for node in internal_node])
+            if split_sets == true_splits[leaf_set]:
+                perfect_splits += 1
+            else:
+                true_split = true_splits[leaf_set]
+                if len(true_split) > len(split_sets):
+                    overcollapses += 1
+                elif len(true_split) < len(split_sets):
+                    print 'undercollapse: %s %s' % (true_split, split_sets)
+                    undercollapses += 1
+                else:
+                    wrong_splits += 1
         else:
-            print 'Missed split: %s' % repr(leaf_namess)
-            print Tree(internal_node)
-            missed_splits += 1
-    print 'Matched splits: %s, missed splits: %s, num true splits: %s' % (matched_splits, missed_splits, len(true_splits))
+            mismatching_leaf_sets += 1
+    print 'overcollapses: %s, undercollapses: %s, wrong splits: %s, mismatching sets: %s, perfect splits: %s' % (overcollapses, undercollapses, wrong_splits, mismatching_leaf_sets, perfect_splits)
 
 def main():
     args = parse_args()
