@@ -25,7 +25,7 @@ import pandas as pd
 from sonLib.bioio import fastaRead
 from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator
 
-cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma']
+cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma', 'guided-neighbor-joining']
 evaluation_methods = ['split-decomposition', 'none']
 
 def seqs_to_columns(seqs, seq_order):
@@ -102,7 +102,7 @@ def cluster_matrix(matrix, cluster_method):
     elif cluster_method == 'k-modes':
         return KModes(n_clusters=2).fit_predict(matrix.todense())
     else:
-        raise ArgumentError('Unknown cluster method: %s' % cluster_method)
+        raise RuntimeError('Unknown cluster method: %s' % cluster_method)
 
 def distance_matrix_from_columns(columns):
     """
@@ -233,7 +233,111 @@ def flatten_list(l):
     """
     return [item for sublist in l for item in sublist]
 
-def build_tree_bottom_up(columns, seq_names, cluster_method, evaluation_method):
+def get_num_skips(parent, child):
+    """
+    Get the number of intermediate nodes between a parent and a child.
+    """
+    if parent == child:
+        return 0
+    path = parent.get_path(child)
+    return len(path) - 1
+
+def calculate_join_costs(species_tree, dup_cost=0.0, loss_cost=0.1):
+    """
+    Calculate the join-cost dictionary needed for guided neighbor-joining.
+
+    For each pair of species, the returned dictionary specifies the cost of joining them.
+    """
+    join_costs = defaultdict(dict)
+    for species1 in species_tree.find_clades():
+        for species2 in species_tree.find_clades():
+            if species1 == species2:
+                join_costs[species1][species2] = 0.0
+            else:
+                mrca = species_tree.common_ancestor(species1, species2)
+                if mrca in (species1, species2):
+                    cost_from_dups = dup_cost
+                else:
+                    cost_from_dups = 0.0
+                num_losses = get_num_skips(mrca, species1) + get_num_skips(mrca, species2)
+                cost_from_losses = num_losses * loss_cost
+                join_costs[species1][species2] = cost_from_dups + cost_from_losses
+    return join_costs
+
+def guided_neighbor_joining(distance_matrix, seq_names, species_tree):
+    """
+    Runs a somewhat stripped-down version of the guided neighbor-joining algorithm.
+
+    Currently missing the "confidence" correction for join distances.
+    """
+    join_costs = calculate_join_costs(species_tree)
+    recon = []
+    for name in seq_names:
+        matching_species = [clade for clade in species_tree.find_clades(name=name.split('.')[0])]
+        assert len(matching_species) == 1
+        recon.append(matching_species[0])
+    r = []
+    for i in xrange(len(seq_names)):
+        r_i = 0.0
+        for j in xrange(len(seq_names)):
+            if i == j:
+                continue
+            r_i += distance_matrix[i][j]
+        r_i /= len(seq_names) - 2
+        r.append(r_i)
+    clades = [Clade(name=name) for name in seq_names]
+    num_joins_left = len(seq_names) - 1;
+    while num_joins_left > 0:
+        min_dist = float('inf')
+        min_i = -1
+        min_j = -1
+        for i in xrange(len(seq_names)):
+            for j in xrange(i + 1, len(seq_names)):
+                if clades[i] == None or clades[j] == None:
+                    continue
+                assert distance_matrix[i][j] == distance_matrix[j][i]
+                dist = distance_matrix[i][j] + join_costs[recon[i]][recon[j]] - r[i] - r[j]
+                if dist < min_dist:
+                    min_i = i
+                    min_j = j
+                    min_dist = dist
+        dist = distance_matrix[min_i][min_j]
+        branch_length_mini = (dist + r[min_i] - r[min_j]) / 2
+        branch_length_minj = dist - branch_length_mini
+        clades[min_i].branch_length = branch_length_mini
+        clades[min_j].branch_length = branch_length_minj
+        new_clade = Clade(clades=[clades[min_i], clades[min_j]])
+        clades[min_j] = None
+        clades[min_i] = new_clade
+        recon[min_i] = species_tree.common_ancestor(recon[min_i], recon[min_j])
+        recon[min_j] = None
+        # Update distance matrix
+        for k in xrange(len(seq_names)):
+            if clades[k] == None or k == min_i:
+                # Don't have to update
+                continue
+            dist_mini_k = distance_matrix[min_i][k]
+            dist_minj_k = distance_matrix[min_j][k]
+            distance_matrix[min_i][k] = (dist_mini_k + dist_minj_k - dist) / 2
+            distance_matrix[k][min_i] = distance_matrix[min_i][k]
+            # Update r[k]
+            if num_joins_left > 2:
+                r[k] = ((r[k] * (num_joins_left - 1)) - dist_mini_k - dist_minj_k + distance_matrix[min_i][k]) / (num_joins_left - 2)
+            else:
+                r[k] = 0.0
+        # Update r for new column
+        r[min_i] = 0.0
+        if num_joins_left > 2:
+            for k in xrange(len(seq_names)):
+                if clades[k] == None:
+                    continue
+                r[min_i] += distance_matrix[min_i][k]
+            r[min_i] /= num_joins_left - 2
+        num_joins_left -= 1
+
+    return Tree(clades[0])
+
+def build_tree_bottom_up(columns, seq_names, species_tree, cluster_method, evaluation_method):
     """
     Build a tree using a NJ-esque clustering method.
     """
@@ -247,8 +351,10 @@ def build_tree_bottom_up(columns, seq_names, cluster_method, evaluation_method):
         tree = tree_constructor.nj(distance_matrix)
     elif cluster_method == 'upgma':
         tree = tree_constructor.upgma(distance_matrix)
+    elif cluster_method == 'guided-neighbor-joining':
+        tree = guided_neighbor_joining(distance_matrix, seq_names, species_tree)
     else:
-        raise ArgumentError('Unrecognized bottom-up method: %s' % cluster_method)
+        raise RuntimeError('Unrecognized bottom-up method: %s' % cluster_method)
     for internal_node in tree.get_nonterminals():
         split = [child for child in internal_node]
         if len(split) != 2:
@@ -265,7 +371,7 @@ def build_tree_bottom_up(columns, seq_names, cluster_method, evaluation_method):
 
     return tree
 
-def build_tree(seqs, cluster_method, evaluation_method, outgroups):
+def build_tree(seqs, species_tree, cluster_method, evaluation_method, outgroups):
     """
     Build a tree using some clustering method and some split-evaluation method.
     """
@@ -274,7 +380,7 @@ def build_tree(seqs, cluster_method, evaluation_method, outgroups):
     if cluster_method in ['k-means', 'k-modes']:
         tree = build_tree_top_down(cols, seq_names, cluster_method, evaluation_method)
     else:
-        tree = build_tree_bottom_up(cols, seq_names, cluster_method, evaluation_method)
+        tree = build_tree_bottom_up(cols, seq_names, species_tree, cluster_method, evaluation_method)
     # workaround for biopython bug.
     for node in tree.find_clades():
         node.clades = list(node.clades)
@@ -336,7 +442,7 @@ def main():
             for evaluation_method in evaluation_methods:
                 # Choose the second child of the root as the outgroup for no good reason
                 outgroups = [node.name for node in true_tree.root[1].get_terminals()]
-                built_tree = build_tree(leaf_seqs, cluster_method, evaluation_method, outgroups)
+                built_tree = build_tree(leaf_seqs, species_tree, cluster_method, evaluation_method, outgroups)
                 evaluation = evaluate_tree(true_tree, built_tree)
                 evaluation['cluster_method'] = cluster_method
                 evaluation['evaluation_method'] = evaluation_method

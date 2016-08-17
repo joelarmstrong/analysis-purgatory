@@ -141,7 +141,7 @@ class GeneralizedReversibleSimulator:
         elif char == 't':
             return 3
         else:
-            raise ArgumentError("Character not in {A,C,G,T}")
+            raise RuntimeError("Character not in {A,C,G,T}")
 
     def index_to_char(self, index):
         assert index >= 0 and index < 4
