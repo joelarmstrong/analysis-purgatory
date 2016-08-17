@@ -18,13 +18,14 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import OneHotEncoder
 from kmodes.kmodes import KModes
 from Bio import Phylo
+from Bio.Phylo import TreeConstruction
 from Bio.Phylo.BaseTree import Clade, Tree
 import numpy as np
 import pandas as pd
 from sonLib.bioio import fastaRead
 from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator
 
-cluster_methods = ['k-modes', 'k-means']
+cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma']
 evaluation_methods = ['split-decomposition', 'none']
 
 def seqs_to_columns(seqs, seq_order):
@@ -202,10 +203,28 @@ def generate_gene_tree_and_sequences(gene_tree_sim, grt_sim, num_columns):
     seqs = grt_sim.generate_leaf_sequences(gene_tree, random_sequence(num_columns))
     return gene_tree, seqs
 
+def build_tree_bottom_up(columns, seq_names, cluster_method, evaluation_method):
+    distance_matrix = distance_matrix_from_columns(columns)
+    # Biopython annoyingly wants the matrix in lower triangular
+    # format, i.e. only everything below the diagonal
+    triangular_matrix = [[entry for j,entry in enumerate(row) if j <= i] for i, row in enumerate(distance_matrix.tolist())]
+    tree_constructor = TreeConstruction.DistanceTreeConstructor()
+    distance_matrix = TreeConstruction._DistanceMatrix(seq_names, triangular_matrix)
+    if cluster_method == 'neighbor-joining':
+        tree = tree_constructor.nj(distance_matrix)
+    elif cluster_method == 'upgma':
+        tree = tree_constructor.upgma(distance_matrix)
+    else:
+        raise ArgumentError('Unrecognized bottom-up method: %s' % cluster_method)
+    return tree
+
 def build_tree(seqs, cluster_method, evaluation_method, outgroups):
     seq_names = seqs.keys()
     cols = seqs_to_columns(seqs, seq_names)
-    tree = build_tree_topdown(cols, seq_names, cluster_method, evaluation_method)
+    if cluster_method in ['k-means', 'k-modes']:
+        tree = build_tree_topdown(cols, seq_names, cluster_method, evaluation_method)
+    else:
+        tree = build_tree_bottom_up(cols, seq_names, cluster_method, evaluation_method)
     # workaround for biopython bug.
     for node in tree.find_clades():
         node.clades = list(node.clades)
