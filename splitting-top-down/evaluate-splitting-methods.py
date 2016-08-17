@@ -29,7 +29,8 @@ cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma']
 evaluation_methods = ['split-decomposition', 'none']
 
 def seqs_to_columns(seqs, seq_order):
-    """Transform a dict of sequences into a list of columns.
+    """
+    Transform a dict of sequences into a list of columns.
 
     Each column is represented by a list of entries. The order of each
     sequence within the entries is the same as the order in the
@@ -51,6 +52,9 @@ def seqs_to_columns(seqs, seq_order):
     return columns
 
 def columns_to_matrix(cols, one_hot_encode=True):
+    """
+    Take a nested list of DNA columns and convert them into a np feature array.
+    """
     def nuc_to_number(nucleotide):
         nucleotide = nucleotide.lower()
         if nucleotide == 'a':
@@ -90,6 +94,9 @@ def parse_args():
     return parser.parse_args()
 
 def cluster_matrix(matrix, cluster_method):
+    """
+    Run a clustering method on a matrix and return the cluster assignments.
+    """
     if cluster_method == 'k-means':
         return KMeans(n_clusters=2).fit_predict(matrix)
     elif cluster_method == 'k-modes':
@@ -98,6 +105,9 @@ def cluster_matrix(matrix, cluster_method):
         raise ArgumentError('Unknown cluster method: %s' % cluster_method)
 
 def distance_matrix_from_columns(columns):
+    """
+    Get a distance matrix (as a np array) from a nested list of DNA columns.
+    """
     num_seqs = len(columns[0])
     matrix = np.zeros([num_seqs, num_seqs], dtype=int)
     for column in columns:
@@ -149,6 +159,9 @@ def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False,
     return True
 
 def is_good_split(cluster_assignments, columns, evaluation_method):
+    """
+    Run the "split-evaluation" method on the columns, and return True if it calls this split good.
+    """
     assert all([i == 0 or i == 1 for i in cluster_assignments]), \
         "A valid split should only split into two partitions"
     if evaluation_method == 'none':
@@ -159,7 +172,10 @@ def is_good_split(cluster_assignments, columns, evaluation_method):
         split2 = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
         return satisfies_four_point_criterion(distance_matrix, split1, split2)
 
-def build_tree_topdown(columns, seq_names, cluster_method, evaluation_method):
+def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method):
+    """
+    Build a tree top-down using successive applications of a clustering method.
+    """
     def is_finished(cluster, columns):
         return len(cluster) <= 2 or all([len(set(column)) == 1 for column in columns])
     def recurse(columns, seq_names):
@@ -193,20 +209,34 @@ def build_tree_topdown(columns, seq_names, cluster_method, evaluation_method):
     return tree
 
 def random_sequence(length):
+    """
+    Get a random DNA sequence of a certain length.
+    """
     seq = []
     for _ in xrange(length):
         seq.append(random.choice(['A', 'a', 'C', 'c', 'G', 'g', 'T', 't']))
     return seq
 
 def generate_gene_tree_and_sequences(gene_tree_sim, grt_sim, num_columns):
+    """
+    Get a random gene tree and the corresponding sequences of the leaves.
+
+    The root sequence a random DNA sequence of length num_columns.
+    """
     gene_tree = gene_tree_sim.generate()
     seqs = grt_sim.generate_leaf_sequences(gene_tree, random_sequence(num_columns))
     return gene_tree, seqs
 
 def flatten_list(l):
+    """
+    Flatten a list.
+    """
     return [item for sublist in l for item in sublist]
 
 def build_tree_bottom_up(columns, seq_names, cluster_method, evaluation_method):
+    """
+    Build a tree using a NJ-esque clustering method.
+    """
     distance_matrix = distance_matrix_from_columns(columns)
     # Biopython annoyingly (but understandably) wants the matrix in
     # lower triangular format, i.e. only everything below the diagonal
@@ -236,10 +266,13 @@ def build_tree_bottom_up(columns, seq_names, cluster_method, evaluation_method):
     return tree
 
 def build_tree(seqs, cluster_method, evaluation_method, outgroups):
+    """
+    Build a tree using some clustering method and some split-evaluation method.
+    """
     seq_names = seqs.keys()
     cols = seqs_to_columns(seqs, seq_names)
     if cluster_method in ['k-means', 'k-modes']:
-        tree = build_tree_topdown(cols, seq_names, cluster_method, evaluation_method)
+        tree = build_tree_top_down(cols, seq_names, cluster_method, evaluation_method)
     else:
         tree = build_tree_bottom_up(cols, seq_names, cluster_method, evaluation_method)
     # workaround for biopython bug.
@@ -249,6 +282,9 @@ def build_tree(seqs, cluster_method, evaluation_method, outgroups):
     return tree
 
 def evaluate_tree(true_tree, test_tree):
+    """
+    Given a true tree and a test tree, give some stats on how well the test tree reflects the truth.
+    """
     true_leaf_sets = set()
     true_splits = {}
     for internal_node in true_tree.get_nonterminals():

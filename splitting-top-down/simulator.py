@@ -8,6 +8,9 @@ import sys
 import numpy as np
 
 def get_parent(tree, child_clade):
+    """
+    Get the parent of a node in a Bio.Phylo Tree.
+    """
     if child_clade == tree.root:
         return None
     node_path = tree.root.get_path(child_clade)
@@ -16,6 +19,9 @@ def get_parent(tree, child_clade):
     return node_path[-2]
 
 def prune_lineages(tree, lineages_to_prune):
+    """
+    Prune a set of lineages from a Bio.Phylo Tree.
+    """
     for lineage in lineages_to_prune:
         while lineage != None:
             parent = get_parent(tree, lineage)
@@ -81,6 +87,9 @@ class BirthDeathSimulator:
         return gene_tree
 
 class GeneralizedReversibleSimulator:
+    """
+    Simulate the evolution of DNA according to a generalized time-reversible process.
+    """
     def __init__(self, frac_a, frac_c, frac_g, a_c, a_g, a_t, c_g, c_t, g_t):
         frac_t = 1.0 - frac_a - frac_c - frac_g
         self.rate_matrix = np.array([[0.0,          frac_c * a_c, frac_g * a_g, frac_t * a_t],
