@@ -203,10 +203,13 @@ def generate_gene_tree_and_sequences(gene_tree_sim, grt_sim, num_columns):
     seqs = grt_sim.generate_leaf_sequences(gene_tree, random_sequence(num_columns))
     return gene_tree, seqs
 
+def flatten_list(l):
+    return [item for sublist in l for item in sublist]
+
 def build_tree_bottom_up(columns, seq_names, cluster_method, evaluation_method):
     distance_matrix = distance_matrix_from_columns(columns)
-    # Biopython annoyingly wants the matrix in lower triangular
-    # format, i.e. only everything below the diagonal
+    # Biopython annoyingly (but understandably) wants the matrix in
+    # lower triangular format, i.e. only everything below the diagonal
     triangular_matrix = [[entry for j,entry in enumerate(row) if j <= i] for i, row in enumerate(distance_matrix.tolist())]
     tree_constructor = TreeConstruction.DistanceTreeConstructor()
     distance_matrix = TreeConstruction._DistanceMatrix(seq_names, triangular_matrix)
@@ -216,6 +219,20 @@ def build_tree_bottom_up(columns, seq_names, cluster_method, evaluation_method):
         tree = tree_constructor.upgma(distance_matrix)
     else:
         raise ArgumentError('Unrecognized bottom-up method: %s' % cluster_method)
+    for internal_node in tree.get_nonterminals():
+        split = [child for child in internal_node]
+        if len(split) != 2:
+            continue
+        split1 = set([leaf.name for leaf in split[1].get_terminals()])
+        leaf_names = [node.name for node in internal_node.get_terminals()]
+        relevant_seq_names = [name for name in seq_names if name in leaf_names]
+        relevant_indices = [i for i, name in enumerate(seq_names) if name in relevant_seq_names]
+        relevant_columns = [[column[i] for i in relevant_indices] for column in columns]
+        cluster_assignments = [int(seq_name in split1) for seq_name in relevant_seq_names]
+        if not is_good_split(cluster_assignments, relevant_columns, evaluation_method):
+            # Need to make this node into a multifurcation.
+            internal_node.clades = flatten_list([[grandchild for grandchild in child] for child in split])
+
     return tree
 
 def build_tree(seqs, cluster_method, evaluation_method, outgroups):
@@ -265,7 +282,7 @@ def evaluate_tree(true_tree, test_tree):
              'undercollapses': undercollapses,
              'wrong_splits': wrong_splits,
              'mismatching_leaf_sets': mismatching_leaf_sets,
-             'perfect_splits': perfect_splits}
+             'perfect_splits': perfect_splits }
 
 def main():
     args = parse_args()
