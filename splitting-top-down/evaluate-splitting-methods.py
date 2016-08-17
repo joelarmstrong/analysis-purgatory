@@ -73,26 +73,6 @@ def columns_to_matrix(cols, one_hot_encode=True):
     encoded_matrix = encoder.fit_transform(raw_matrix)
     return encoded_matrix
 
-def parse_args():
-    parser = ArgumentParser(description=__doc__)
-    parser.add_argument('species_tree', help='species tree (newick format)')
-    parser.add_argument('--duplication-rate',
-                        type=float,
-                        default=0.2,
-                        help='Gene duplication rate')
-    parser.add_argument('--loss-rate',
-                        type=float,
-                        default=0.05,
-                        help='Gene loss rate')
-    parser.add_argument('--num-columns',
-                        type=int,
-                        default=200,
-                        help='Number of columns')
-    parser.add_argument('--num-tests',
-                        type=int,
-                        default=100)
-    return parser.parse_args()
-
 def cluster_matrix(matrix, cluster_method):
     """
     Run a clustering method on a matrix and return the cluster assignments.
@@ -384,7 +364,7 @@ def build_tree(seqs, species_tree, cluster_method, evaluation_method, outgroups)
     # workaround for biopython bug.
     for node in tree.find_clades():
         node.clades = list(node.clades)
-    tree.root_with_outgroup(*[node for node in tree.get_terminals() if node.name in outgroups])
+    tree.root_with_outgroup(tree.common_ancestor([node for node in tree.get_terminals() if node.name in outgroups]), outgroup_branch_length=0.0)
     return tree
 
 def evaluate_tree(true_tree, test_tree):
@@ -426,6 +406,32 @@ def evaluate_tree(true_tree, test_tree):
              'mismatching_leaf_sets': mismatching_leaf_sets,
              'perfect_splits': perfect_splits }
 
+def parse_args():
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument('species_tree', help='species tree (newick format)')
+    parser.add_argument('--duplication-rate',
+                        type=float,
+                        default=0.2,
+                        help='Gene duplication rate')
+    parser.add_argument('--loss-rate',
+                        type=float,
+                        default=0.05,
+                        help='Gene loss rate')
+    parser.add_argument('--num-columns',
+                        type=int,
+                        default=200,
+                        help='Number of columns')
+    parser.add_argument('--evaluation-methods',
+                        nargs='+',
+                        default=evaluation_methods)
+    parser.add_argument('--cluster-methods',
+                        nargs='+',
+                        default=cluster_methods)
+    parser.add_argument('--num-tests',
+                        type=int,
+                        default=100)
+    return parser.parse_args()
+
 def main():
     args = parse_args()
     species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
@@ -438,8 +444,8 @@ def main():
     for _ in xrange(args.num_tests):
         true_tree, leaf_seqs = generate_gene_tree_and_sequences(gene_tree_sim, grt_sim,
                                                                 args.num_columns)
-        for cluster_method in cluster_methods:
-            for evaluation_method in evaluation_methods:
+        for cluster_method in args.cluster_methods:
+            for evaluation_method in args.evaluation_methods:
                 # Choose the second child of the root as the outgroup for no good reason
                 outgroups = [node.name for node in true_tree.root[1].get_terminals()]
                 built_tree = build_tree(leaf_seqs, species_tree, cluster_method, evaluation_method, outgroups)
