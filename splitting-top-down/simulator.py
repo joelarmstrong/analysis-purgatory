@@ -47,9 +47,11 @@ class BirthDeathSimulator:
                 if time + dt > remaining_length:
                     # Make sure the last step is for whatever time is
                     # still remaining, rather than just the full dt
-                    dt = remaining_length - time
-                duplication_occurred = random.random() < self.duplication_rate * dt
-                extinction_occurred = random.random() < self.extinction_rate * dt
+                    timestep = remaining_length - time
+                else:
+                    timestep = dt
+                duplication_occurred = random.random() < self.duplication_rate * timestep
+                extinction_occurred = random.random() < self.extinction_rate * timestep
                 # If both a duplication and an extinction
                 # occurred, we assume only the extinction
                 # happened, for simplicity.
