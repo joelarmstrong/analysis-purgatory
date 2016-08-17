@@ -44,7 +44,10 @@ class BirthDeathSimulator:
                 # because Bio.Phylo will flip out if float64's are
                 # used as branch lengths
                 time = float(time)
-                # FIXME: will do the full dt on last iteration
+                if time + dt > remaining_length:
+                    # Make sure the last step is for whatever time is
+                    # still remaining, rather than just the full dt
+                    dt = remaining_length - time
                 duplication_occurred = random.random() < self.duplication_rate * dt
                 extinction_occurred = random.random() < self.extinction_rate * dt
                 # If both a duplication and an extinction
