@@ -295,6 +295,7 @@ def guided_neighbor_joining(distance_matrix, seq_names, species_tree):
         clades[min_i] = new_clade
         recon[min_i] = species_tree.common_ancestor(recon[min_i], recon[min_j])
         recon[min_j] = None
+        r[min_j] = 0.0
         # Update distance matrix
         for k in xrange(len(seq_names)):
             if clades[k] == None or k == min_i:
@@ -304,6 +305,7 @@ def guided_neighbor_joining(distance_matrix, seq_names, species_tree):
             dist_minj_k = distance_matrix[min_j][k]
             distance_matrix[min_i][k] = (dist_mini_k + dist_minj_k - dist) / 2
             distance_matrix[k][min_i] = distance_matrix[min_i][k]
+            distance_matrix[min_j][k] = distance_matrix[k][min_j] = -1000000.0
             # Update r[k]
             if num_joins_left > 2:
                 r[k] = ((r[k] * (num_joins_left - 1)) - dist_mini_k - dist_minj_k + distance_matrix[min_i][k]) / (num_joins_left - 2)
@@ -351,11 +353,11 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
     # lower triangular format, i.e. only everything below the diagonal
     triangular_matrix = [[entry for j,entry in enumerate(row) if j <= i] for i, row in enumerate(distance_matrix.tolist())]
     tree_constructor = TreeConstruction.DistanceTreeConstructor()
-    distance_matrix = TreeConstruction._DistanceMatrix(seq_names, triangular_matrix)
+    triangular_matrix = TreeConstruction._DistanceMatrix(seq_names, triangular_matrix)
     if cluster_method == 'neighbor-joining':
-        tree = tree_constructor.nj(distance_matrix)
+        tree = tree_constructor.nj(triangular_matrix)
     elif cluster_method == 'upgma':
-        tree = tree_constructor.upgma(distance_matrix)
+        tree = tree_constructor.upgma(triangular_matrix)
     elif cluster_method == 'guided-neighbor-joining':
         tree = guided_neighbor_joining(distance_matrix, seq_names, species_tree)
     elif cluster_method == 'maximum-likelihood':
