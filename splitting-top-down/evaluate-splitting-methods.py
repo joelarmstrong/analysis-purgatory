@@ -32,6 +32,9 @@ cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma', 'guided-ne
                    'maximum-likelihood']
 evaluation_methods = ['split-decomposition', 'none']
 
+# used for testing slightly different evaluation strategies
+use_all_columns_for_split_evaluation = False
+
 def seqs_to_columns(seqs, seq_order):
     """
     Transform a dict of sequences into a list of columns.
@@ -165,6 +168,7 @@ def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method):
     def recurse(columns, seq_names):
         matrix = columns_to_matrix(columns, one_hot_encode=(cluster_method == 'k-means'))
         cluster_assignments = cluster_matrix(matrix, cluster_method)
+        # TODO: allow the use of all columns here if the proper option is specified
         if not is_good_split(cluster_assignments, columns, evaluation_method):
             return Clade(clades=map(lambda x: Clade(name=x), seq_names))
         cluster0_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
@@ -368,13 +372,26 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
         split = [child for child in internal_node]
         if len(split) != 2:
             continue
+        split0 = set([leaf.name for leaf in split[0].get_terminals()])
         split1 = set([leaf.name for leaf in split[1].get_terminals()])
         leaf_names = [node.name for node in internal_node.get_terminals()]
         relevant_seq_names = [name for name in seq_names if name in leaf_names]
         relevant_indices = [i for i, name in enumerate(seq_names) if name in relevant_seq_names]
-        relevant_columns = [[column[i] for i in relevant_indices] for column in columns]
-        cluster_assignments = [int(seq_name in split1) for seq_name in relevant_seq_names]
-        if not is_good_split(cluster_assignments, relevant_columns, evaluation_method):
+        multifurcate = False
+        if use_all_columns_for_split_evaluation:
+            relevant_columns = columns
+            cluster_assignments0 = [int(seq_name in split0) for seq_name in relevant_seq_names]
+            cluster_assignments1 = [int(seq_name in split1) for seq_name in relevant_seq_names]
+            split0_good = is_good_split(cluster_assignments0, relevant_columns, evaluation_method)
+            split1_good = is_good_split(cluster_assignments1, relevant_columns, evaluation_method)
+            if not split0_good or not split1_good:
+                multifurcate = True
+        else:
+            relevant_columns = [[column[i] for i in relevant_indices] for column in columns]
+            cluster_assignments = [int(seq_name in split1) for seq_name in relevant_seq_names]
+            if not is_good_split(cluster_assignments, relevant_columns, evaluation_method):
+                multifurcate = True
+        if multifurcate:
             # Need to make this node into a multifurcation.
             internal_node.clades = flatten_list([[grandchild for grandchild in child] for child in split])
 
@@ -459,10 +476,16 @@ def parse_args():
     parser.add_argument('--num-tests',
                         type=int,
                         default=100)
+    parser.add_argument('--use-all-columns-for-split-evaluation',
+                        default=False,
+                        action='store_true')
     return parser.parse_args()
 
 def main():
     args = parse_args()
+    # Nasty, but can be removed once the best strategy has been figured out
+    global use_all_columns_for_split_evaluation
+    use_all_columns_for_split_evaluation = args.use_all_columns_for_split_evaluation
     species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
     gene_tree_sim = BirthDeathSimulator(species_tree,
                                         args.duplication_rate,
