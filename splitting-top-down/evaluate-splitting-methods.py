@@ -14,18 +14,22 @@ from StringIO import StringIO
 from collections import defaultdict
 import itertools
 import random
+import os
+from glob import glob
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import OneHotEncoder
 from kmodes.kmodes import KModes
 from Bio import Phylo
 from Bio.Phylo import TreeConstruction
 from Bio.Phylo.BaseTree import Clade, Tree
+from Bio.Phylo.Applications import RaxmlCommandline
 import numpy as np
 import pandas as pd
-from sonLib.bioio import fastaRead
+from sonLib.bioio import fastaRead, system
 from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator
 
-cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma', 'guided-neighbor-joining']
+cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma', 'guided-neighbor-joining',
+                   'maximum-likelihood']
 evaluation_methods = ['split-decomposition', 'none']
 
 def seqs_to_columns(seqs, seq_order):
@@ -317,7 +321,28 @@ def guided_neighbor_joining(distance_matrix, seq_names, species_tree):
 
     return Tree(clades[0])
 
-def build_tree_bottom_up(columns, seq_names, species_tree, cluster_method, evaluation_method):
+def raxml_tree(seqs):
+    """
+    Run RAxML on the given sequences and return a Bio.Phylo tree (arbitrarily binarized and rooted).
+    """
+    # TODO: do this properly so it doesn't leave a bunch of temp files everywhere
+    faPath = 'tmp.fa'
+    with open(faPath, 'w') as f:
+        for seq_name, seq in seqs.iteritems():
+            f.write('>%s\n' % seq_name)
+            f.write('%s\n' % seq)
+    cmd = RaxmlCommandline(sequences=faPath, model='GTRCAT', name='test')
+    system(str(cmd) + ' -V >/dev/null 2>&1')
+    tree = Phylo.read(open('RAxML_bestTree.test'), 'newick')
+    for path in glob('RAxML_*.test'):
+        os.remove(path)
+
+    # Arbitrarily binarize the tree so it can get rerooted properly.
+    assert(len(tree.root.clades) == 3)
+    tree.root.clades=[Clade(branch_length=0.0, clades=tree.root.clades[0:2]), tree.root.clades[2]]
+    return tree
+
+def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method, evaluation_method):
     """
     Build a tree using a NJ-esque clustering method.
     """
@@ -333,6 +358,8 @@ def build_tree_bottom_up(columns, seq_names, species_tree, cluster_method, evalu
         tree = tree_constructor.upgma(distance_matrix)
     elif cluster_method == 'guided-neighbor-joining':
         tree = guided_neighbor_joining(distance_matrix, seq_names, species_tree)
+    elif cluster_method == 'maximum-likelihood':
+        tree = raxml_tree(seqs)
     else:
         raise RuntimeError('Unrecognized bottom-up method: %s' % cluster_method)
     for internal_node in tree.get_nonterminals():
@@ -360,7 +387,7 @@ def build_tree(seqs, species_tree, cluster_method, evaluation_method, outgroups)
     if cluster_method in ['k-means', 'k-modes']:
         tree = build_tree_top_down(cols, seq_names, cluster_method, evaluation_method)
     else:
-        tree = build_tree_bottom_up(cols, seq_names, species_tree, cluster_method, evaluation_method)
+        tree = build_tree_bottom_up(seqs, cols, seq_names, species_tree, cluster_method, evaluation_method)
     # workaround for biopython bug.
     for node in tree.find_clades():
         node.clades = list(node.clades)
