@@ -166,14 +166,28 @@ def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method):
     """
     Build a tree top-down using successive applications of a clustering method.
     """
+    all_columns = columns
+    all_seq_names = seq_names
     def is_finished(cluster, columns):
         return len(cluster) <= 2 or all([len(set(column)) == 1 for column in columns])
     def recurse(columns, seq_names):
         matrix = columns_to_matrix(columns, one_hot_encode=(cluster_method == 'k-means'))
         cluster_assignments = cluster_matrix(matrix, cluster_method)
-        # TODO: allow the use of all columns here if the proper option is specified
-        if not is_good_split(cluster_assignments, columns, evaluation_method):
-            return Clade(clades=map(lambda x: Clade(name=x), seq_names))
+        if use_all_columns_for_split_evaluation:
+            relative_indices = [i for i, name in enumerate(all_seq_names) if name in seq_names]
+            all_cluster0_assignments = [0] * len(all_seq_names)
+            for j, i in enumerate(relative_indices):
+                all_cluster0_assignments[i] = int(not cluster_assignments[j])
+            all_cluster1_assignments = [0] * len(all_seq_names)
+            for j, i in enumerate(relative_indices):
+                all_cluster1_assignments[i] = cluster_assignments[j]
+            cluster0_good = is_good_split(all_cluster0_assignments, all_columns, evaluation_method)
+            cluster1_good = is_good_split(all_cluster1_assignments, all_columns, evaluation_method)
+            if not cluster0_good or not cluster1_good:
+                return Clade(clades=map(lambda x: Clade(name=x), seq_names))
+        else:
+            if not is_good_split(cluster_assignments, columns, evaluation_method):
+                return Clade(clades=map(lambda x: Clade(name=x), seq_names))
         cluster0_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
         cluster1_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
         cluster0 = [seq_names[i] for i in cluster0_indices]
