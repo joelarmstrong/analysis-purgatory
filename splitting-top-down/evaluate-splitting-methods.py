@@ -30,7 +30,7 @@ from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator
 
 cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma', 'guided-neighbor-joining',
                    'maximum-likelihood']
-evaluation_methods = ['split-decomposition', 'none']
+evaluation_methods = ['split-decomposition', 'relaxed-split-decomposition', 'none']
 
 # used for testing slightly different evaluation strategies
 use_all_columns_for_split_evaluation = False
@@ -153,11 +153,14 @@ def is_good_split(cluster_assignments, columns, evaluation_method):
         "A valid split should only split into two partitions"
     if evaluation_method == 'none':
         return True
-    elif evaluation_method == 'split-decomposition':
+    elif evaluation_method in ('split-decomposition', 'relaxed-split-decomposition'):
         distance_matrix = distance_matrix_from_columns(columns)
         split1 = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
         split2 = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
-        return satisfies_four_point_criterion(distance_matrix, split1, split2)
+        if evaluation_method == 'relaxed-split-decomposition':
+            return satisfies_four_point_criterion(distance_matrix, split1, split2, relaxed=True)
+        else:
+            return satisfies_four_point_criterion(distance_matrix, split1, split2, relaxed=False)
 
 def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method):
     """
