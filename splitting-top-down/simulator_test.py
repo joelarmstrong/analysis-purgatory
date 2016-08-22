@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 import unittest
 import random
-from hypothesis import given, assume
+from collections import Counter
+from hypothesis import given, assume, settings, note
 from hypothesis.strategies import text, builds, floats, sampled_from, composite, random_module, integers
 from Bio import Phylo
 from Bio.Phylo.BaseTree import Tree, Clade
 from StringIO import StringIO
-from simulator import GeneralizedReversibleSimulator, BirthDeathSimulator
+from simulator import GeneralizedReversibleSimulator, BirthDeathSimulator, prune_lineages
 
 # random data strategies
 probability = floats(min_value=0.0, max_value=1.0)
@@ -127,6 +128,14 @@ class GRTSimulatorTest(unittest.TestCase):
         self.assertTrue(all([len(leaf_sequence) == len(sequence) for leaf_sequence in leaf_sequences.values()]))
 
 class BirthDeathSimulatorTest(unittest.TestCase):
+    def test_prune_lineages(self):
+        tree = Phylo.read(StringIO('((a:0.1,b:0.1):0.1,c:0.1);'), 'newick')
+        pruned_tree = prune_lineages(tree, tree.find_clades(name='c'))
+        fake_file = StringIO()
+        Phylo.write(pruned_tree, fake_file, 'newick')
+        self.assertEqual(fake_file.getvalue(), '(a:0.10000,b:0.10000):0.10000;\n')
+
+    @settings(max_examples=2000, timeout=0)
     @given(random_tree(), probability, probability, random_module())
     def test_extinct_lineages_are_pruned(self, tree, duplication_rate, loss_rate, random_module):
         # Duplication rate should be reasonable (if it is high we get
@@ -138,10 +147,12 @@ class BirthDeathSimulatorTest(unittest.TestCase):
         tree_with_extinctions = sim.generate(remove_extinct_lineages=False)
         random.seed(seed)
         tree_without_extinctions = sim.generate()
+        note('With extinctions: %s' % tree_with_extinctions)
+        note('Without extinctions: %s' % tree_without_extinctions)
         names_with_extinctions = [node.name for node in tree_with_extinctions.get_terminals() if node != tree_with_extinctions.root]
         names_without_extinctions = [node.name for node in tree_without_extinctions.get_terminals() if node != tree_without_extinctions.root]
-        self.assertEqual(names_without_extinctions,
-                         [name for name in names_with_extinctions if 'extinct' not in name])
+        self.assertEqual(Counter(names_without_extinctions),
+                         Counter(name for name in names_with_extinctions if 'extinct' not in name))
 
 if __name__ == '__main__':
     unittest.main()

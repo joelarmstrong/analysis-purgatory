@@ -18,21 +18,42 @@ def get_parent(tree, child_clade):
         return tree.root
     return node_path[-2]
 
+def prune_lineage(tree, lineage):
+    last_valid_lineage = None
+    while lineage != None:
+        parent = get_parent(tree, lineage)
+        if parent is None:
+            if len(lineage.clades) == 0:
+                if last_valid_lineage is not None and last_valid_lineage.is_terminal():
+                    return Tree(Clade(clades=[last_valid_lineage]))
+                else:
+                    return Tree(last_valid_lineage)
+            else:
+                assert len(lineage.clades) == 1
+                if lineage.clades[0].is_terminal():
+                    return Tree(Clade(clades=[lineage.clades[0]]))
+                else:
+                    return Tree(lineage.clades[0])
+        assert lineage in parent
+        parent.clades.remove(lineage)
+        if len(parent.clades) >= 1:
+            if len(parent.clades) == 1 and last_valid_lineage is None:
+                last_valid_lineage = parent.clades[0]
+            elif last_valid_lineage is not None:
+                parent.clades.append(last_valid_lineage)
+                return tree
+        if len(parent.clades) <= 1:
+            lineage = parent
+        else:
+            break
+    return tree
+
 def prune_lineages(tree, lineages_to_prune):
     """
     Prune a set of lineages from a Bio.Phylo Tree.
     """
     for lineage in lineages_to_prune:
-        while lineage != None:
-            parent = get_parent(tree, lineage)
-            if parent is None:
-                return Tree()
-            assert lineage in parent
-            parent.clades.remove(lineage)
-            if len(parent.clades) == 0:
-                lineage = parent
-            else:
-                break
+        tree = prune_lineage(tree, lineage)
     return tree
 
 class BirthDeathSimulator:
