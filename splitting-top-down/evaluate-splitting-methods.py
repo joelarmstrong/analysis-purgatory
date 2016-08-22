@@ -513,6 +513,9 @@ def main():
     for _ in xrange(args.num_tests):
         true_tree, leaf_seqs = generate_gene_tree_and_sequences(gene_tree_sim, grt_sim,
                                                                 args.num_columns)
+        if len(true_tree.get_terminals()) < 3:
+            # Not enough leaves to build a tree
+            continue
         for cluster_method in args.cluster_methods:
             for evaluation_method in args.evaluation_methods:
                 # Choose the second child of the root as the outgroup for no good reason
@@ -524,7 +527,7 @@ def main():
                 tree_evaluations.append(evaluation)
 
     df = pd.DataFrame(tree_evaluations)
-    print df.groupby(['cluster_method', 'evaluation_method']).sum()
+    print df.groupby(['cluster_method', 'evaluation_method']).sum().to_csv()
 
 if __name__ == '__main__':
     main()
