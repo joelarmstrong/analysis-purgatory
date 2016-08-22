@@ -23,6 +23,7 @@ from Bio import Phylo
 from Bio.Phylo import TreeConstruction
 from Bio.Phylo.BaseTree import Clade, Tree
 from Bio.Phylo.Applications import RaxmlCommandline
+import seaborn as sns
 import numpy as np
 import pandas as pd
 from sonLib.bioio import fastaRead, system
@@ -465,7 +466,7 @@ def evaluate_tree(true_tree, test_tree):
             mismatching_leaf_sets += 1
     return { 'overcollapses': overcollapses,
              'undercollapses': undercollapses,
-             'wrong_splits': wrong_splits,
+             'flipped_splits': wrong_splits,
              'mismatching_leaf_sets': mismatching_leaf_sets,
              'perfect_splits': perfect_splits }
 
@@ -474,11 +475,11 @@ def parse_args():
     parser.add_argument('species_tree', help='species tree (newick format)')
     parser.add_argument('--duplication-rate',
                         type=float,
-                        default=0.2,
+                        default=None,
                         help='Gene duplication rate')
     parser.add_argument('--loss-rate',
                         type=float,
-                        default=0.05,
+                        default=None,
                         help='Gene loss rate')
     parser.add_argument('--num-columns',
                         type=int,
@@ -498,17 +499,12 @@ def parse_args():
                         action='store_true')
     return parser.parse_args()
 
-def main():
-    args = parse_args()
-    # Nasty, but can be removed once the best strategy has been figured out
-    global use_all_columns_for_split_evaluation
-    use_all_columns_for_split_evaluation = args.use_all_columns_for_split_evaluation
-    species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
-    gene_tree_sim = BirthDeathSimulator(species_tree,
-                                        args.duplication_rate,
-                                        args.loss_rate)
-    grt_sim = GeneralizedReversibleSimulator(0.25, 0.25, 0.25, 0.25,
-                                             0.25, 0.25, 0.25, 0.25, 0.25)
+def tree_to_newick(tree):
+    f = StringIO()
+    Phylo.write(tree, f, 'newick')
+    return f.getvalue().strip()
+
+def run_simulated_tests(gene_tree_sim, grt_sim, species_tree, args):
     tree_evaluations = []
     for _ in xrange(args.num_tests):
         true_tree, leaf_seqs = generate_gene_tree_and_sequences(gene_tree_sim, grt_sim,
@@ -524,9 +520,47 @@ def main():
                 evaluation = evaluate_tree(true_tree, built_tree)
                 evaluation['cluster_method'] = cluster_method
                 evaluation['evaluation_method'] = evaluation_method
+                evaluation['tree'] = tree_to_newick(built_tree)
+                evaluation['true_tree'] = tree_to_newick(true_tree)
+                evaluation['loss_rate'] = gene_tree_sim.extinction_rate
+                evaluation['duplication_rate'] = gene_tree_sim.duplication_rate
+                evaluation['fraction_perfect_splits'] = float(evaluation['perfect_splits']) / len(true_tree.get_nonterminals())
                 tree_evaluations.append(evaluation)
+    return tree_evaluations
+
+def main():
+    args = parse_args()
+    # Nasty, but can be removed once the best strategy has been figured out
+    global use_all_columns_for_split_evaluation
+    use_all_columns_for_split_evaluation = args.use_all_columns_for_split_evaluation
+    species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
+    if args.duplication_rate is None:
+        # Test several duplication rates
+        duplication_range = np.arange(0.0, 0.5, 0.01)
+    else:
+        # Only one duplication rate
+        duplication_range = [args.duplication_rate]
+    if args.loss_rate is None:
+        # Test several loss rates
+        loss_range = np.arange(0.0, 0.6, 0.1)
+    else:
+        # Only one loss rate
+        duplication_range = [args.loss_rate]
+    tree_evaluations = []
+    for duplication_rate in duplication_range:
+        for loss_rate in loss_range:
+            print duplication_rate, loss_rate
+            gene_tree_sim = BirthDeathSimulator(species_tree,
+                                                duplication_rate,
+                                                loss_rate)
+            grt_sim = GeneralizedReversibleSimulator(0.25, 0.25, 0.25, 0.25,
+                                                     0.25, 0.25, 0.25, 0.25, 0.25)
+            tree_evaluations.extend(run_simulated_tests(gene_tree_sim, grt_sim, species_tree, args))
 
     df = pd.DataFrame(tree_evaluations)
+    sns.swarmplot(data=df, x='loss_rate', y='fraction_perfect_splits', size=3.5, linewidth=1, hue='cluster_method', split=True)
+    sns.boxplot(data=df, x='loss_rate', y='fraction_perfect_splits', hue='cluster_method')
+    sns.plt.show()
     print df.groupby(['cluster_method', 'evaluation_method']).sum().to_csv()
 
 if __name__ == '__main__':
