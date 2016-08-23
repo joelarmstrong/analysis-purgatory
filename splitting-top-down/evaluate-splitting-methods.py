@@ -310,8 +310,8 @@ def guided_neighbor_joining(distance_matrix, seq_names, species_tree):
         dist = distance_matrix[min_i][min_j]
         branch_length_mini = (dist + r[min_i] - r[min_j]) / 2
         branch_length_minj = dist - branch_length_mini
-        clades[min_i].branch_length = branch_length_mini
-        clades[min_j].branch_length = branch_length_minj
+        clades[min_i].branch_length = max(branch_length_mini, 0.0)
+        clades[min_j].branch_length = max(branch_length_minj, 0.0)
         new_clade = Clade(clades=[clades[min_i], clades[min_j]])
         clades[min_j] = None
         clades[min_i] = new_clade
@@ -342,7 +342,6 @@ def guided_neighbor_joining(distance_matrix, seq_names, species_tree):
                 r[min_i] += distance_matrix[min_i][k]
             r[min_i] /= num_joins_left - 2
         num_joins_left -= 1
-
     return Tree(clades[0])
 
 def raxml_tree(seqs):
