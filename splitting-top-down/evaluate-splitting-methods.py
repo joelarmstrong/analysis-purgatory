@@ -508,7 +508,7 @@ def run_simulated_tests(gene_tree_sim, grt_sim, species_tree, args):
     for _ in xrange(args.num_tests):
         true_tree, leaf_seqs = generate_gene_tree_and_sequences(gene_tree_sim, grt_sim,
                                                                 args.num_columns)
-        if len(true_tree.get_terminals()) < 3:
+        if len(true_tree.get_terminals()) < 4:
             # Not enough leaves to build a tree
             continue
         for cluster_method in args.cluster_methods:
@@ -535,13 +535,13 @@ def main():
     species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
     if args.duplication_rate is None:
         # Test several duplication rates
-        duplication_range = np.arange(0.0, 0.5, 0.01)
+        duplication_range = np.arange(0.0, 0.4, 0.1)
     else:
         # Only one duplication rate
         duplication_range = [args.duplication_rate]
     if args.loss_rate is None:
         # Test several loss rates
-        loss_range = np.arange(0.0, 0.6, 0.1)
+        loss_range = np.arange(0.0, 0.5, 0.1)
     else:
         # Only one loss rate
         duplication_range = [args.loss_rate]
