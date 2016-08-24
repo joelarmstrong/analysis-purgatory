@@ -23,7 +23,6 @@ from Bio import Phylo
 from Bio.Phylo import TreeConstruction
 from Bio.Phylo.BaseTree import Clade, Tree
 from Bio.Phylo.Applications import RaxmlCommandline
-import seaborn as sns
 import numpy as np
 import pandas as pd
 from sonLib.bioio import fastaRead, system
@@ -557,10 +556,7 @@ def main():
             tree_evaluations.extend(run_simulated_tests(gene_tree_sim, grt_sim, species_tree, args))
 
     df = pd.DataFrame(tree_evaluations)
-    sns.swarmplot(data=df, x='loss_rate', y='fraction_perfect_splits', size=3.5, linewidth=1, hue='cluster_method', split=True)
-    sns.boxplot(data=df, x='loss_rate', y='fraction_perfect_splits', hue='cluster_method')
-    sns.plt.show()
-    print df.groupby(['cluster_method', 'evaluation_method']).sum().to_csv()
+    print df.to_csv()
 
 if __name__ == '__main__':
     main()
