@@ -26,10 +26,10 @@ from Bio.Phylo.Applications import RaxmlCommandline
 import numpy as np
 import pandas as pd
 from sonLib.bioio import fastaRead, system
-from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator
+from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator, get_parent
 
 cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma', 'guided-neighbor-joining',
-                   'maximum-likelihood']
+                   'maximum-likelihood', 'split-decomposition']
 evaluation_methods = ['split-decomposition', 'relaxed-split-decomposition', 'none']
 
 # used for testing slightly different evaluation strategies
@@ -407,8 +407,33 @@ def isolation_index(dm, split1, split2):
                                    - dm[i, j] - dm[k, l] for k, l in itertools.combinations(split2, 2)]))
     return min(min_isolations) / 2
 
-def greedy_split_decomposition(distance_matrix, relaxed=False):
-    d_splits = get_d_splits(distance_matrix)
+def greedy_split_decomposition(distance_matrix, seq_names, relaxed=False):
+    def get_set_to_split(split, tree):
+        split_1_clades = [clade for clade in tree.get_terminals() if clade.name in split.set1]
+        split_2_clades = [clade for clade in tree.get_terminals() if clade.name in split.set2]
+        split_1_parents = set([get_parent(tree, clade) for clade in split_1_clades])
+        split_2_parents = set([get_parent(tree, clade) for clade in split_2_clades])
+        if len(split_1_parents) == 1:
+            return split.set1
+        if len(split_2_parents) == 1:
+            return split.set2
+        return None
+    d_splits = sorted(list(get_d_splits(distance_matrix)), key=lambda x: x.isolation_index, reverse=True)
+    tree = Tree(Clade(clades=[Clade(name=i) for i in xrange(len(seq_names))]))
+    for split in d_splits:
+        compatible_set = get_set_to_split(split, tree)
+        if compatible_set is None:
+            # This split is not compatible with the splits that have already been selected.
+            continue
+        clades = [clade for clade in tree.get_terminals() if clade.name in compatible_set]
+        parent = tree.common_ancestor(clades)
+        parent.clades = filter(lambda x: x.name not in compatible_set, parent.clades)
+        parent.clades.append(Clade(clades=clades))
+    # Remap leaf names to be names and not ints
+    leaves = [clade for clade in tree.get_terminals()]
+    for leaf in leaves:
+        leaf.name = seq_names[int(leaf.name)]
+    return tree
 
 def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method, evaluation_method):
     """
@@ -428,6 +453,8 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
         tree = guided_neighbor_joining(distance_matrix, seq_names, species_tree)
     elif cluster_method == 'maximum-likelihood':
         tree = raxml_tree(seqs)
+    elif cluster_method == 'split-decomposition':
+        tree = greedy_split_decomposition(distance_matrix, seq_names, relaxed=True)
     else:
         raise RuntimeError('Unrecognized bottom-up method: %s' % cluster_method)
     for internal_node in tree.get_nonterminals():
@@ -589,7 +616,7 @@ def main():
         loss_range = np.arange(0.0, 0.5, 0.1)
     else:
         # Only one loss rate
-        duplication_range = [args.loss_rate]
+        loss_range = [args.loss_rate]
     tree_evaluations = []
     for duplication_rate in duplication_range:
         for loss_rate in loss_range:
