@@ -11,7 +11,7 @@ Requires:
 """
 from argparse import ArgumentParser
 from StringIO import StringIO
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import itertools
 import random
 import os
@@ -366,6 +366,17 @@ def raxml_tree(seqs):
     tree.root.clades=[Clade(branch_length=0.0, clades=tree.root.clades[0:2]), tree.root.clades[2]]
     return tree
 
+class DSplit(namedtuple('DSplit_base', ['set1', 'set2', 'isolation_index'])):
+    def __eq__(self, other):
+        if ((other.set1 == self.set1 and other.set2 == other.set2) \
+             or (other.set2 == self.set1 and other.set1 == self.set2)) \
+           and other.isolation_index == self.isolation_index:
+            return True
+        else:
+            return False
+    def __hash__(self):
+        return hash((frozenset((self.set1, self.set2)), self.isolation_index))
+
 def get_d_splits(distance_matrix, relaxed=False):
     d_splits = set()
     for i in xrange(1, len(distance_matrix)):
@@ -384,7 +395,20 @@ def get_d_splits(distance_matrix, relaxed=False):
 
     # Filter out all trivial splits
     d_splits = set(split for split in d_splits if len(split[0]) > 1 and len(split[1]) > 1)
+    d_splits = set(DSplit(split[0], split[1], isolation_index(distance_matrix, split[0], split[1])) for split in d_splits)
     return d_splits
+
+def isolation_index(dm, split1, split2):
+    min_isolations = []
+    for i, j in itertools.combinations(split1, 2):
+        min_isolations.append(min([max(dm[i, j] + dm[k, l],
+                                       dm[i, k] + dm[j, l],
+                                       dm[i, l] + dm[j, k])
+                                   - dm[i, j] - dm[k, l] for k, l in itertools.combinations(split2, 2)]))
+    return min(min_isolations) / 2
+
+def greedy_split_decomposition(distance_matrix, relaxed=False):
+    d_splits = get_d_splits(distance_matrix)
 
 def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method, evaluation_method):
     """

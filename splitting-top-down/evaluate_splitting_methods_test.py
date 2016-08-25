@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import unittest
 import numpy as np
-from evaluate_splitting_methods import get_d_splits
+from evaluate_splitting_methods import get_d_splits, DSplit
 
 class DSplitTest(unittest.TestCase):
     def setUp(self):
@@ -15,10 +15,11 @@ class DSplitTest(unittest.TestCase):
 
     def test_d_split(self):
         d_splits = get_d_splits(self.distance_matrix, relaxed=True)
-        self.assertEqual(d_splits, set([(frozenset([0, 1, 2, 3]), frozenset([4, 5, 6])),
-                                        (frozenset([0, 5, 6]), frozenset([1, 2, 3, 4])),
-                                        (frozenset([0, 1, 2, 6]), frozenset([3, 4, 5])),
-                                        (frozenset([0, 1, 5, 6]), frozenset([2, 3, 4]))]))
+        self.assertEqual(d_splits, set([
+            DSplit(frozenset([0, 1, 2, 3]), frozenset([4, 5, 6]), 6.0),
+            DSplit(frozenset([1, 2, 3, 4]), frozenset([0, 5, 6]), 4.0),
+            DSplit(frozenset([0, 1, 2, 6]), frozenset([3, 4, 5]), 2.0),
+            DSplit(frozenset([0, 1, 5, 6]), frozenset([2, 3, 4]), 1.0)]))
 
 if __name__ == '__main__':
     unittest.main()
