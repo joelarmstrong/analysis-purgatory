@@ -120,6 +120,8 @@ def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False,
     split is a singleton. This isn't justified by the tree metric, but
     may work in practice.
     """
+    split1 = list(split1)
+    split2 = list(split2)
     if len(split1) < len(split2):
         # We call split1 the larger split, to simplify the
         # "enforce_three_point" logic
@@ -137,10 +139,10 @@ def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False,
             inter1 = matrix[i, k] + matrix[j, l]
             inter2 = matrix[i, l] + matrix[j, k]
             if relaxed:
-                if intra > inter1 and intra > inter2:
+                if intra >= inter1 and intra >= inter2:
                     return False
             else:
-                if intra > inter1 or intra > inter2:
+                if intra >= inter1 or intra >= inter2:
                     return False
 
     return True
@@ -363,6 +365,26 @@ def raxml_tree(seqs):
     assert(len(tree.root.clades) == 3)
     tree.root.clades=[Clade(branch_length=0.0, clades=tree.root.clades[0:2]), tree.root.clades[2]]
     return tree
+
+def get_d_splits(distance_matrix, relaxed=False):
+    d_splits = set()
+    for i in xrange(1, len(distance_matrix)):
+        new_d_splits = set()
+        singleton_split = (frozenset(range(i)), frozenset([i]))
+        if satisfies_four_point_criterion(distance_matrix, singleton_split[0], singleton_split[1], enforce_three_point=False):
+            new_d_splits.add(singleton_split)
+        for d_split in d_splits:
+            new_d_split_1 = (d_split[0] | frozenset([i]), d_split[1])
+            new_d_split_2 = (d_split[0], d_split[1] | frozenset([i]))
+            if satisfies_four_point_criterion(distance_matrix, new_d_split_1[0], new_d_split_1[1], relaxed=relaxed, enforce_three_point=False):
+                new_d_splits.add(new_d_split_1)
+            if satisfies_four_point_criterion(distance_matrix, new_d_split_2[0], new_d_split_2[1], relaxed=relaxed, enforce_three_point=False):
+                new_d_splits.add(new_d_split_2)
+        d_splits = new_d_splits
+
+    # Filter out all trivial splits
+    d_splits = set(split for split in d_splits if len(split[0]) > 1 and len(split[1]) > 1)
+    return d_splits
 
 def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method, evaluation_method):
     """
