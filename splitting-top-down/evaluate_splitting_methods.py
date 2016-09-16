@@ -598,6 +598,13 @@ def parse_args():
                         choices=['jukes-cantor', 'none'],
                         default='jukes-cantor',
                         help='The type of correction to use for distance-based methods')
+    parser.add_argument('--summary',
+                        default=False,
+                        action='store_true',
+                        help='Instead of printing out all results, print a summary of the results')
+    parser.add_argument('--log-level',
+                        choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'],
+                        help='Log level')
     return parser.parse_args()
 
 def tree_to_newick(tree):
@@ -635,6 +642,13 @@ def run_simulated_tests(gene_tree_sim, grt_sim, species_tree, args):
 
 def main():
     args = parse_args()
+    if args.log_level is not None:
+        # Shamelessly stolen from the python logging module docs.
+        level = getattr(logging, args.log_level)
+        # Clear the global logging info since some library "helpfully" set it for us.
+        logging.getLogger('').handlers = []
+        # No need to do input checking here since argparse ensures the input is valid.
+        logging.basicConfig(level=level)
     # Nasty, but can be removed once the best strategy has been figured out
     global use_all_columns_for_split_evaluation
     use_all_columns_for_split_evaluation = args.use_all_columns_for_split_evaluation
@@ -663,8 +677,10 @@ def main():
             tree_evaluations.extend(run_simulated_tests(gene_tree_sim, grt_sim, species_tree, args))
 
     df = pd.DataFrame(tree_evaluations)
-    print df.to_csv()
-    print df.groupby(['cluster_method', 'evaluation_method']).sum()
+    if args.summary:
+        print df.groupby(['cluster_method', 'evaluation_method']).sum()
+    else:
+        print df.to_csv()
 
 if __name__ == '__main__':
     main()
