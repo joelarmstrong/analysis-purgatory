@@ -152,7 +152,7 @@ def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False,
 
     return True
 
-def is_good_split(cluster_assignments, columns, evaluation_method):
+def is_good_split(cluster_assignments, columns, evaluation_method, distance_correction):
     """
     Run the "split-evaluation" method on the columns, and return True if it calls this split good.
     """
@@ -161,7 +161,7 @@ def is_good_split(cluster_assignments, columns, evaluation_method):
     if evaluation_method == 'none':
         return True
     elif evaluation_method in ('split-decomposition', 'relaxed-split-decomposition'):
-        distance_matrix = distance_matrix_from_columns(columns)
+        distance_matrix = distance_matrix_from_columns(columns, distance_correction)
         split1 = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
         split2 = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
         if evaluation_method == 'relaxed-split-decomposition':
@@ -169,7 +169,7 @@ def is_good_split(cluster_assignments, columns, evaluation_method):
         else:
             return satisfies_four_point_criterion(distance_matrix, split1, split2, relaxed=False)
 
-def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method):
+def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method, distance_correction):
     """
     Build a tree top-down using successive applications of a clustering method.
     """
@@ -189,8 +189,10 @@ def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method):
         all_cluster1_assignments = [0] * len(all_seq_names)
         for j, i in enumerate(relative_indices):
             all_cluster1_assignments[i] = cluster_assignments[j]
-        cluster0_good = is_good_split(all_cluster0_assignments, all_columns, evaluation_method)
-        cluster1_good = is_good_split(all_cluster1_assignments, all_columns, evaluation_method)
+        cluster0_good = is_good_split(all_cluster0_assignments, all_columns, evaluation_method,
+                                      distance_correction)
+        cluster1_good = is_good_split(all_cluster1_assignments, all_columns, evaluation_method,
+                                      distance_correction)
         if not cluster0_good or not cluster1_good:
             return Clade(clades=map(lambda x: Clade(name=x), seq_names))
 
@@ -447,7 +449,8 @@ def greedy_split_decomposition(distance_matrix, seq_names, relaxed=False):
         leaf.name = seq_names[int(leaf.name)]
     return tree
 
-def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method, evaluation_method, distance_correction):
+def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method, evaluation_method,
+                         distance_correction):
     """
     Build a tree using a NJ-esque clustering method.
     """
@@ -487,8 +490,10 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
         relevant_columns = columns
         cluster_assignments0 = [int(seq_name in split0) for seq_name in relevant_seq_names]
         cluster_assignments1 = [int(seq_name in split1) for seq_name in relevant_seq_names]
-        split0_good = is_good_split(cluster_assignments0, relevant_columns, evaluation_method)
-        split1_good = is_good_split(cluster_assignments1, relevant_columns, evaluation_method)
+        split0_good = is_good_split(cluster_assignments0, relevant_columns, evaluation_method,
+                                    distance_correction)
+        split1_good = is_good_split(cluster_assignments1, relevant_columns, evaluation_method,
+                                    distance_correction)
         if not split0_good or not split1_good:
             multifurcate = True
 
@@ -505,9 +510,11 @@ def build_tree(seqs, species_tree, cluster_method, evaluation_method, distance_c
     seq_names = seqs.keys()
     cols = seqs_to_columns(seqs, seq_names)
     if cluster_method in ['k-means', 'k-modes']:
-        tree = build_tree_top_down(cols, seq_names, cluster_method, evaluation_method)
+        tree = build_tree_top_down(cols, seq_names, cluster_method, evaluation_method,
+                                   distance_correction)
     else:
-        tree = build_tree_bottom_up(seqs, cols, seq_names, species_tree, cluster_method, evaluation_method, distance_correction)
+        tree = build_tree_bottom_up(seqs, cols, seq_names, species_tree, cluster_method,
+                                    evaluation_method, distance_correction)
     # workaround for biopython bug.
     for node in tree.find_clades():
         node.clades = list(node.clades)
