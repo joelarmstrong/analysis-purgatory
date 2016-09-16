@@ -34,9 +34,6 @@ cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma', 'guided-ne
                    'maximum-likelihood', 'split-decomposition']
 evaluation_methods = ['split-decomposition', 'relaxed-split-decomposition', 'none']
 
-# used for testing slightly different evaluation strategies
-use_all_columns_for_split_evaluation = False
-
 def seqs_to_columns(seqs, seq_order):
     """
     Transform a dict of sequences into a list of columns.
@@ -183,21 +180,20 @@ def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method):
     def recurse(columns, seq_names):
         matrix = columns_to_matrix(columns, one_hot_encode=(cluster_method == 'k-means'))
         cluster_assignments = cluster_matrix(matrix, cluster_method)
-        if use_all_columns_for_split_evaluation:
-            relative_indices = [i for i, name in enumerate(all_seq_names) if name in seq_names]
-            all_cluster0_assignments = [0] * len(all_seq_names)
-            for j, i in enumerate(relative_indices):
-                all_cluster0_assignments[i] = int(not cluster_assignments[j])
-            all_cluster1_assignments = [0] * len(all_seq_names)
-            for j, i in enumerate(relative_indices):
-                all_cluster1_assignments[i] = cluster_assignments[j]
-            cluster0_good = is_good_split(all_cluster0_assignments, all_columns, evaluation_method)
-            cluster1_good = is_good_split(all_cluster1_assignments, all_columns, evaluation_method)
-            if not cluster0_good or not cluster1_good:
-                return Clade(clades=map(lambda x: Clade(name=x), seq_names))
-        else:
-            if not is_good_split(cluster_assignments, columns, evaluation_method):
-                return Clade(clades=map(lambda x: Clade(name=x), seq_names))
+
+        # Evaluate the split
+        relative_indices = [i for i, name in enumerate(all_seq_names) if name in seq_names]
+        all_cluster0_assignments = [0] * len(all_seq_names)
+        for j, i in enumerate(relative_indices):
+            all_cluster0_assignments[i] = int(not cluster_assignments[j])
+        all_cluster1_assignments = [0] * len(all_seq_names)
+        for j, i in enumerate(relative_indices):
+            all_cluster1_assignments[i] = cluster_assignments[j]
+        cluster0_good = is_good_split(all_cluster0_assignments, all_columns, evaluation_method)
+        cluster1_good = is_good_split(all_cluster1_assignments, all_columns, evaluation_method)
+        if not cluster0_good or not cluster1_good:
+            return Clade(clades=map(lambda x: Clade(name=x), seq_names))
+
         cluster0_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
         cluster1_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
         cluster0 = [seq_names[i] for i in cluster0_indices]
@@ -475,6 +471,8 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
         tree = greedy_split_decomposition(distance_matrix, seq_names, relaxed=True)
     else:
         raise RuntimeError('Unrecognized bottom-up method: %s' % cluster_method)
+
+    # Evaluate each split in the resulting tree.
     for internal_node in tree.get_nonterminals():
         split = [child for child in internal_node]
         if len(split) != 2:
@@ -485,19 +483,15 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
         relevant_seq_names = [name for name in seq_names if name in leaf_names]
         relevant_indices = [i for i, name in enumerate(seq_names) if name in relevant_seq_names]
         multifurcate = False
-        if use_all_columns_for_split_evaluation:
-            relevant_columns = columns
-            cluster_assignments0 = [int(seq_name in split0) for seq_name in relevant_seq_names]
-            cluster_assignments1 = [int(seq_name in split1) for seq_name in relevant_seq_names]
-            split0_good = is_good_split(cluster_assignments0, relevant_columns, evaluation_method)
-            split1_good = is_good_split(cluster_assignments1, relevant_columns, evaluation_method)
-            if not split0_good or not split1_good:
-                multifurcate = True
-        else:
-            relevant_columns = [[column[i] for i in relevant_indices] for column in columns]
-            cluster_assignments = [int(seq_name in split1) for seq_name in relevant_seq_names]
-            if not is_good_split(cluster_assignments, relevant_columns, evaluation_method):
-                multifurcate = True
+
+        relevant_columns = columns
+        cluster_assignments0 = [int(seq_name in split0) for seq_name in relevant_seq_names]
+        cluster_assignments1 = [int(seq_name in split1) for seq_name in relevant_seq_names]
+        split0_good = is_good_split(cluster_assignments0, relevant_columns, evaluation_method)
+        split1_good = is_good_split(cluster_assignments1, relevant_columns, evaluation_method)
+        if not split0_good or not split1_good:
+            multifurcate = True
+
         if multifurcate:
             # Need to make this node into a multifurcation.
             internal_node.clades = flatten_list([[grandchild for grandchild in child] for child in split])
@@ -588,9 +582,6 @@ def parse_args():
                         default=100,
                         help='Number of trees to build for each combination of dup-rate, '
                         'loss-rate, cluster-method, evaluation-method')
-    parser.add_argument('--use-all-columns-for-split-evaluation',
-                        default=False,
-                        action='store_true')
     parser.add_argument('--observed-species',
                         nargs='+',
                         help='A subset of leaf species that will be used for tree-building')
@@ -649,9 +640,7 @@ def main():
         logging.getLogger('').handlers = []
         # No need to do input checking here since argparse ensures the input is valid.
         logging.basicConfig(level=level)
-    # Nasty, but can be removed once the best strategy has been figured out
-    global use_all_columns_for_split_evaluation
-    use_all_columns_for_split_evaluation = args.use_all_columns_for_split_evaluation
+
     species_tree = Phylo.read(StringIO(args.species_tree), 'newick')
     if args.duplication_rate is None:
         # Test several duplication rates
