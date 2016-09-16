@@ -12,10 +12,12 @@ Requires:
 from argparse import ArgumentParser
 from StringIO import StringIO
 from collections import defaultdict, namedtuple
+from glob import glob
 import itertools
 import random
 import os
-from glob import glob
+import logging
+
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import OneHotEncoder
 from kmodes.kmodes import KModes
@@ -26,7 +28,7 @@ from Bio.Phylo.Applications import RaxmlCommandline
 import numpy as np
 import pandas as pd
 from sonLib.bioio import fastaRead, system
-from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator, get_parent
+from simulator import BirthDeathSimulator, GeneralizedReversibleSimulator, get_parent, prune_lineages
 
 cluster_methods = ['k-modes', 'k-means', 'neighbor-joining', 'upgma', 'guided-neighbor-joining',
                    'maximum-likelihood', 'split-decomposition']
@@ -91,7 +93,7 @@ def cluster_matrix(matrix, cluster_method):
     else:
         raise RuntimeError('Unknown cluster method: %s' % cluster_method)
 
-def distance_matrix_from_columns(columns):
+def distance_matrix_from_columns(columns, distance_correction):
     """
     Get a distance matrix (as a np array) from a nested list of DNA columns.
     """
@@ -104,7 +106,13 @@ def distance_matrix_from_columns(columns):
                 if entry_1.lower() != entry_2.lower():
                     matrix[i, j] += 1
                     matrix[j, i] += 1
-    return np.true_divide(matrix, len(columns))
+    uncorrected = np.true_divide(matrix, len(columns))
+    if distance_correction == 'none':
+        return uncorrected
+    elif distance_correction == 'jukes-cantor':
+        return -0.75 * np.log(1 - 1.333333 * uncorrected)
+    else:
+        raise RuntimeError("Unknown distance correction method: %s" % distance_correction)
 
 def satisfies_four_point_criterion(matrix, split1, split2, relaxed=False,
                                    enforce_three_point=True):
@@ -224,14 +232,22 @@ def random_sequence(length):
         seq.append(random.choice(['A', 'a', 'C', 'c', 'G', 'g', 'T', 't']))
     return seq
 
-def generate_gene_tree_and_sequences(gene_tree_sim, grt_sim, num_columns):
+def generate_gene_tree_and_sequences(gene_tree_sim, grt_sim, num_columns, observed_species=None):
     """
     Get a random gene tree and the corresponding sequences of the leaves.
 
-    The root sequence a random DNA sequence of length num_columns.
+    The root sequence is a random DNA sequence of length num_columns.
+
+    observed_species is either None (in which case all species are
+    observed) or a list of species to prune from the gene tree /
+    sequences.
     """
     gene_tree = gene_tree_sim.generate()
     seqs = grt_sim.generate_leaf_sequences(gene_tree, random_sequence(num_columns))
+    if observed_species is not None and len(gene_tree.root) > 0:
+        leaf_clades_to_remove = [leaf for leaf in gene_tree.get_terminals() if leaf.name.split('.')[0] not in observed_species]
+        gene_tree = prune_lineages(gene_tree, leaf_clades_to_remove)
+        seqs = dict([(name, v) for name, v in seqs.iteritems() if name.split('.')[0] in observed_species])
     return gene_tree, seqs
 
 def flatten_list(l):
@@ -435,11 +451,11 @@ def greedy_split_decomposition(distance_matrix, seq_names, relaxed=False):
         leaf.name = seq_names[int(leaf.name)]
     return tree
 
-def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method, evaluation_method):
+def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method, evaluation_method, distance_correction):
     """
     Build a tree using a NJ-esque clustering method.
     """
-    distance_matrix = distance_matrix_from_columns(columns)
+    distance_matrix = distance_matrix_from_columns(columns, distance_correction)
     # Biopython annoyingly (but understandably) wants the matrix in
     # lower triangular format, i.e. only everything below the diagonal
     triangular_matrix = [[entry for j,entry in enumerate(row) if j <= i] for i, row in enumerate(distance_matrix.tolist())]
@@ -454,6 +470,8 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
     elif cluster_method == 'maximum-likelihood':
         tree = raxml_tree(seqs)
     elif cluster_method == 'split-decomposition':
+        logging.info(seq_names)
+        logging.info(distance_matrix)
         tree = greedy_split_decomposition(distance_matrix, seq_names, relaxed=True)
     else:
         raise RuntimeError('Unrecognized bottom-up method: %s' % cluster_method)
@@ -486,7 +504,7 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
 
     return tree
 
-def build_tree(seqs, species_tree, cluster_method, evaluation_method, outgroups):
+def build_tree(seqs, species_tree, cluster_method, evaluation_method, distance_correction, outgroups):
     """
     Build a tree using some clustering method and some split-evaluation method.
     """
@@ -495,11 +513,12 @@ def build_tree(seqs, species_tree, cluster_method, evaluation_method, outgroups)
     if cluster_method in ['k-means', 'k-modes']:
         tree = build_tree_top_down(cols, seq_names, cluster_method, evaluation_method)
     else:
-        tree = build_tree_bottom_up(seqs, cols, seq_names, species_tree, cluster_method, evaluation_method)
+        tree = build_tree_bottom_up(seqs, cols, seq_names, species_tree, cluster_method, evaluation_method, distance_correction)
     # workaround for biopython bug.
     for node in tree.find_clades():
         node.clades = list(node.clades)
     tree.root_with_outgroup(tree.common_ancestor([node for node in tree.get_terminals() if node.name in outgroups]), outgroup_branch_length=0.0)
+    logging.info('%s built: %s' % (cluster_method, tree))
     return tree
 
 def evaluate_tree(true_tree, test_tree):
@@ -558,16 +577,27 @@ def parse_args():
                         help='Number of columns')
     parser.add_argument('--evaluation-methods',
                         nargs='+',
-                        default=evaluation_methods)
+                        default=evaluation_methods,
+                        help='Methods to collapse the uncertain splits in the trees')
     parser.add_argument('--cluster-methods',
                         nargs='+',
-                        default=cluster_methods)
+                        default=cluster_methods,
+                        help='Methods to build the trees')
     parser.add_argument('--num-tests',
                         type=int,
-                        default=100)
+                        default=100,
+                        help='Number of trees to build for each combination of dup-rate, '
+                        'loss-rate, cluster-method, evaluation-method')
     parser.add_argument('--use-all-columns-for-split-evaluation',
                         default=False,
                         action='store_true')
+    parser.add_argument('--observed-species',
+                        nargs='+',
+                        help='A subset of leaf species that will be used for tree-building')
+    parser.add_argument('--distance-correction',
+                        choices=['jukes-cantor', 'none'],
+                        default='jukes-cantor',
+                        help='The type of correction to use for distance-based methods')
     return parser.parse_args()
 
 def tree_to_newick(tree):
@@ -579,7 +609,8 @@ def run_simulated_tests(gene_tree_sim, grt_sim, species_tree, args):
     tree_evaluations = []
     for _ in xrange(args.num_tests):
         true_tree, leaf_seqs = generate_gene_tree_and_sequences(gene_tree_sim, grt_sim,
-                                                                args.num_columns)
+                                                                args.num_columns,
+                                                                args.observed_species)
         if len(true_tree.get_terminals()) < 4:
             # Not enough leaves to build a tree
             continue
@@ -587,10 +618,13 @@ def run_simulated_tests(gene_tree_sim, grt_sim, species_tree, args):
             for evaluation_method in args.evaluation_methods:
                 # Choose the second child of the root as the outgroup for no good reason
                 outgroups = [node.name for node in true_tree.root[1].get_terminals()]
-                built_tree = build_tree(leaf_seqs, species_tree, cluster_method, evaluation_method, outgroups)
+                logging.info('true tree: %s' % true_tree)
+                built_tree = build_tree(leaf_seqs, species_tree, cluster_method, evaluation_method,
+                                        args.distance_correction, outgroups)
                 evaluation = evaluate_tree(true_tree, built_tree)
                 evaluation['cluster_method'] = cluster_method
                 evaluation['evaluation_method'] = evaluation_method
+                evaluation['distance_correction'] = args.distance_correction
                 evaluation['tree'] = tree_to_newick(built_tree)
                 evaluation['true_tree'] = tree_to_newick(true_tree)
                 evaluation['loss_rate'] = gene_tree_sim.extinction_rate
@@ -620,7 +654,7 @@ def main():
     tree_evaluations = []
     for duplication_rate in duplication_range:
         for loss_rate in loss_range:
-            print duplication_rate, loss_rate
+            logging.info('Starting with dup rate %s, loss rate %s' % (duplication_rate, loss_rate))
             gene_tree_sim = BirthDeathSimulator(species_tree,
                                                 duplication_rate,
                                                 loss_rate)
@@ -630,6 +664,7 @@ def main():
 
     df = pd.DataFrame(tree_evaluations)
     print df.to_csv()
+    print df.groupby(['cluster_method', 'evaluation_method']).sum()
 
 if __name__ == '__main__':
     main()
