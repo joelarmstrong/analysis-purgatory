@@ -169,7 +169,7 @@ def is_good_split(cluster_assignments, columns, evaluation_method, distance_corr
         else:
             return satisfies_four_point_criterion(distance_matrix, split1, split2, relaxed=False)
 
-def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method, distance_correction):
+def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method):
     """
     Build a tree top-down using successive applications of a clustering method.
     """
@@ -180,21 +180,6 @@ def build_tree_top_down(columns, seq_names, cluster_method, evaluation_method, d
     def recurse(columns, seq_names):
         matrix = columns_to_matrix(columns, one_hot_encode=(cluster_method == 'k-means'))
         cluster_assignments = cluster_matrix(matrix, cluster_method)
-
-        # Evaluate the split
-        relative_indices = [i for i, name in enumerate(all_seq_names) if name in seq_names]
-        all_cluster0_assignments = [0] * len(all_seq_names)
-        for j, i in enumerate(relative_indices):
-            all_cluster0_assignments[i] = int(not cluster_assignments[j])
-        all_cluster1_assignments = [0] * len(all_seq_names)
-        for j, i in enumerate(relative_indices):
-            all_cluster1_assignments[i] = cluster_assignments[j]
-        cluster0_good = is_good_split(all_cluster0_assignments, all_columns, evaluation_method,
-                                      distance_correction)
-        cluster1_good = is_good_split(all_cluster1_assignments, all_columns, evaluation_method,
-                                      distance_correction)
-        if not cluster0_good or not cluster1_good:
-            return Clade(clades=map(lambda x: Clade(name=x), seq_names))
 
         cluster0_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 0]
         cluster1_indices = [i for i, cluster in enumerate(cluster_assignments) if cluster == 1]
@@ -475,6 +460,20 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
     else:
         raise RuntimeError('Unrecognized bottom-up method: %s' % cluster_method)
 
+    return tree
+
+def build_tree(seqs, species_tree, cluster_method, evaluation_method, distance_correction, outgroups):
+    """
+    Build a tree using some clustering method and some split-evaluation method.
+    """
+    seq_names = seqs.keys()
+    columns = seqs_to_columns(seqs, seq_names)
+    if cluster_method in ['k-means', 'k-modes']:
+        tree = build_tree_top_down(columns, seq_names, cluster_method, evaluation_method)
+    else:
+        tree = build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
+                                    evaluation_method, distance_correction)
+
     # Evaluate each split in the resulting tree.
     for internal_node in tree.get_nonterminals():
         split = [child for child in internal_node]
@@ -501,20 +500,6 @@ def build_tree_bottom_up(seqs, columns, seq_names, species_tree, cluster_method,
             # Need to make this node into a multifurcation.
             internal_node.clades = flatten_list([[grandchild for grandchild in child] for child in split])
 
-    return tree
-
-def build_tree(seqs, species_tree, cluster_method, evaluation_method, distance_correction, outgroups):
-    """
-    Build a tree using some clustering method and some split-evaluation method.
-    """
-    seq_names = seqs.keys()
-    cols = seqs_to_columns(seqs, seq_names)
-    if cluster_method in ['k-means', 'k-modes']:
-        tree = build_tree_top_down(cols, seq_names, cluster_method, evaluation_method,
-                                   distance_correction)
-    else:
-        tree = build_tree_bottom_up(seqs, cols, seq_names, species_tree, cluster_method,
-                                    evaluation_method, distance_correction)
     # workaround for biopython bug.
     for node in tree.find_clades():
         node.clades = list(node.clades)
