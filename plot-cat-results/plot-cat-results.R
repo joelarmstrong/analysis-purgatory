@@ -28,7 +28,7 @@ df$AlnCoverage <- as.numeric(df$AlnCoverage)
 df$AlnIdentity <- as.numeric(df$AlnIdentity)
 df$Badness <- as.numeric(df$Badness)
 df$NumMissingIntrons <- as.numeric(df$NumMissingIntrons)
-df$NumMissingExons <- as.numeric(df$NumMissinglExons)
+df$NumMissingExons <- as.numeric(df$NumMissingExons)
 df$PercentUnknownBases <- as.numeric(df$PercentUnknownBases)
 df$RefTranscriptId <- sapply(df$TranscriptId, function(x) { split = strsplit(x, "-")[[1]]; return(paste(split[1:(length(split)-1)], sep="-"))})
 
@@ -36,7 +36,7 @@ ref_df <- df %>% group_by(Run, RefTranscriptId) %>% summarize(maxCov=max(AlnCove
 
 glimpse(df)
 
-ref_df$maxCovBin <- cut(ref_df$maxCov, c(0,75,90,95,98,99.999999999999,100), c("0-75", "75-90", "90-95", "95-98", "95-100", "100"))
+ref_df$maxCovBin <- cut(ref_df$maxCov, c(0,.75,.90,.95,.98,.99999999999999,1.00), c("0-75", "75-90", "90-95", "95-98", "95-100", "100"))
 
 ## p <- ggplot(df, aes(x=AlnCoverage)) + theme_classic()
 ## p <- p + geom_histogram(breaks=c(0,50,70,90,95,99,100), position='identity')
@@ -51,7 +51,7 @@ p <- p + geom_bar(position="stack")
 ggsave(paste(args$output, 'coverage.stacked', 'pdf', sep='.'), p)
 
 
-p <- ggplot(subset(ref_df, maxCov >= 90), aes(x=maxCov, fill=Run)) + theme_classic()
+p <- ggplot(subset(ref_df, maxCov >= .9), aes(x=maxCov, fill=Run)) + theme_classic()
 p <- p + geom_histogram(position="dodge")
 
 ggsave(paste(args$output, 'coverage', 'pdf', sep='.'), p, width=8*16/9, height=8)
