@@ -33,7 +33,6 @@ if (!is.null(args$cladeMap)) {
     cladeMap <- read.table(args$cladeMap, sep="\t", header=T)
     coverage_df <- left_join(coverage_df, cladeMap, by = "Genome")
 }
-
 p <- ggplot(coverage_df, aes(x=Alignment, y=PercentCoverage))
 p <- p + theme_classic()
 if (args$bar) {
@@ -64,7 +63,7 @@ if (args$bar) {
     if (!is.null(args$cladeMap)) {
         p <- p + geom_line(aes(color=Clade, group=Genome))
     } else {
-        p <- p + geom_line(group=Genome)
+        p <- p + geom_line(aes(group=Genome))
     }
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
     p <- p + ylab(paste("Percent coverage on", ref_genome))
