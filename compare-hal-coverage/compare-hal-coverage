@@ -48,7 +48,11 @@ if (args$bar) {
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
     p <- p + ylab(paste("Percent coverage on", ref_genome))
 } else if (args$differential) {
-    first_alignment_name <- args$label[[1]]
+    if (!is.null(args$labels)) {
+        first_alignment_name <- args$labels[[1]]
+    } else {
+        first_alignment_name <- args$coverage[[1]]
+    }
     first_alignment_coverage <- coverage_df %>% group_by(Genome) %>% subset(Alignment == first_alignment_name) %>% summarize(firstAlignmentPercentCoverage=first(PercentCoverage))
     coverage_df <- left_join(coverage_df, first_alignment_coverage, by="Genome")
     coverage_df <- subset(coverage_df, Alignment != first_alignment_name & Genome != ref_genome)
