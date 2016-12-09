@@ -36,18 +36,20 @@ if (!is.null(args$cladeMap)) {
 p <- ggplot(coverage_df, aes(x=Alignment, y=PercentCoverage))
 p <- p + theme_classic()
 if (args$bar) {
+    # Simple bar plot
     p <- p + facet_wrap( ~ Genome)
     p <- p + geom_bar(position="dodge", stat="identity")
-    p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
     p <- p + ylab(paste("Percent coverage on", ref_genome))
 } else if (args$scatterplot) {
+    # Simple scatter plot. The advantage over the bar plot is that the
+    # y axis isn't forced to start at 0.
     p <- p + facet_wrap( ~ Genome, scales="free_y")
     p <- p + geom_point()
-    p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
     p <- p + ylab(paste("Percent coverage on", ref_genome))
 } else if (args$differential) {
+    # Bar plot comparing the first alignment to every other alignment.
     if (!is.null(args$labels)) {
         first_alignment_name <- args$labels[[1]]
     } else {
@@ -60,10 +62,10 @@ if (args$bar) {
     p <- ggplot(coverage_df, aes(x=Genome, y=DifferentialPercentCoverage, fill=Alignment)) + theme_classic()
     p <- p + geom_bar(position="dodge", stat="identity", width=rel(0.5))
     p <- p + scale_fill_brewer(type="qual", palette="Dark2")
-    p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
     p <- p + ylab(paste("Difference in percent coverage relative to", first_alignment_name))
     p <- p + ggtitle(paste("Differential coverage on genome", ref_genome))
 } else {
+    # Grouped line plot showing each genome's coverage among the alignments.
     if (!is.null(args$cladeMap)) {
         p <- p + geom_line(aes(color=Clade, group=Genome))
     } else {
@@ -72,5 +74,6 @@ if (args$bar) {
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
     p <- p + ylab(paste("Percent coverage on", ref_genome))
 }
+p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
 ggsave(args$output, p)
 
