@@ -40,8 +40,9 @@ def main():
     df = pd.DataFrame(data)
     for col in df:
         if col not in ['TotalLength']:
+            df2 = df[['TotalLength', col]].dropna(axis=0)
+            print np.polyfit(df2['TotalLength'], df2[col], args.degree)
             print col
-            print np.polyfit(df['TotalLength'], df[col], args.degree)
 
 if __name__ == '__main__':
     main()
