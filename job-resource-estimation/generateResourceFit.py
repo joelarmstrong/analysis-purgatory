@@ -25,6 +25,11 @@ def parse_args():
                            "same number of arguments")
     return args
 
+def evaluate(poly, x):
+    """Evaluates a polynomial (provided as a pd.Series) at x."""
+    X = [x**degree for degree in reversed(xrange(len(poly)))]
+    return sum(poly*X)
+
 def main():
     args = parse_args()
     data = []
@@ -41,8 +46,12 @@ def main():
     for col in df:
         if col not in ['TotalLength']:
             df2 = df[['TotalLength', col]].dropna(axis=0)
-            print np.polyfit(df2['TotalLength'], df2[col], args.degree)
-            print col
+            poly = np.polyfit(df2['TotalLength'], df2[col], args.degree)
+            print poly
+            print '%s: simMammals: %sG, nematodes: %sG, euarchontoglires: %sG' % \
+                (col, evaluate(poly, 2400000)/(1024*1024*1024),
+                 evaluate(poly, 429000000)/(1024*1024*1024),
+                 evaluate(poly, 8279009913)/(1024*1024*1024))
 
 if __name__ == '__main__':
     main()
