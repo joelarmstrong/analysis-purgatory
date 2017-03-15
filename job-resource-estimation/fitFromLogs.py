@@ -48,7 +48,7 @@ def main():
             print col
             sns.regplot(data=df2, x='Length', y=col, order=args.degree, ci=None)
             predicted = np.polyval(poly, df2['Length'])
-            residuals = predicted - df2[col]
+            residuals = df2[col] - predicted
             # Plot residuals
             df3 = pd.DataFrame({'predicted':predicted, 'residuals': residuals})
             sns.jointplot(data=df3, x='predicted', y='residuals')
