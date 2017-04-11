@@ -1,0 +1,26 @@
+#!/usr/bin/env Rscript
+if (!require("pacman")) install.packages("pacman", repos = "https://cloud.r-project.org/")
+pacman::p_load(argparse, ggplot2, dplyr)
+
+# Parse arguments.
+parser <- ArgumentParser(description = 'Plot a single coverage file produced by halStats --coverage')
+parser$add_argument('--output', help = 'Output PDF file', default = 'coverage.pdf')
+parser$add_argument('coverage', help = 'Coverage file')
+args <- parser$parse_args()
+
+# Parse the coverage files.
+coverage_df <- read.csv(args$coverage, header=T)
+
+ref_genome <- coverage_df$Genome[1]
+ref_genome_len <- coverage_df$"sitesCovered1Times"[1]
+coverage_df$PercentCoverage <- coverage_df$"sitesCovered1Times" / ref_genome_len * 100
+
+p <- ggplot(coverage_df, aes(x=Genome, y=PercentCoverage))
+p <- p + geom_bar(stat="identity")
+# Sort the genomes by decreasing coverage, so it looks a bit prettier.
+genomeOrdering <- arrange(coverage_df, desc(PercentCoverage))$Genome
+p <- p + scale_x_discrete(limits=genomeOrdering)
+p <- p + ylab(paste("Percent coverage on", ref_genome))
+p <- p + theme_classic()
+p <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
+ggsave(args$output, p)

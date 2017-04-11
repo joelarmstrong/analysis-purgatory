@@ -7,10 +7,11 @@ parser <- ArgumentParser(description = 'Plot a comparison between multiple cover
 parser$add_argument('--output', help = 'Output PDF file', default = 'coverage.pdf')
 parser$add_argument('--labels', nargs = '+', help = 'Labels for each input file')
 parser$add_argument('coverage', nargs = '+', help = 'Coverage files')
+parser$add_argument('--intersection', action = 'store_true', default = F, help = 'Only show genomes that are present in all coverage files')
 parser$add_argument('--cladeMap', help = 'Clade map file describing how to group the genomes')
 parser$add_argument('--bar', action = 'store_true', default = F, help = 'Create a faceted bar graph instead of line graph')
 parser$add_argument('--scatterplot', action = 'store_true', default = F, help = 'Create a faceted scatterplot instead of line graph')
-parser$add_argument('--differential', action = 'store_true', default = F, help = 'Plot the differential, with respect to the first coverage file, of the other coverage files')
+parser$add_argument('--difference', action = 'store_true', default = F, help = 'Plot the difference, with respect to the first coverage file, of the other coverage files')
 args <- parser$parse_args()
 
 # Parse the coverage files.
@@ -28,11 +29,22 @@ if (!is.null(args$labels)) {
     coverage_df$Alignment <- file_to_label[matching_rows, ]$label
 }
 
+if (args$intersection) {
+    genomes <- list()
+    for (genome in unique(coverage_df$Genome)) {
+        if (length(unique(subset(coverage_df, Genome == genome)$Alignment)) == length(unique(coverage_df$Alignment))) {
+            genomes <- c(genomes, genome)
+        }
+    }
+    coverage_df <- subset(coverage_df, Genome %in% genomes)
+}
+
 # Apply the clade grouping, if any
 if (!is.null(args$cladeMap)) {
     cladeMap <- read.table(args$cladeMap, sep="\t", header=T)
     coverage_df <- left_join(coverage_df, cladeMap, by = "Genome")
 }
+glimpse(coverage_df)
 p <- ggplot(coverage_df, aes(x=Alignment, y=PercentCoverage))
 p <- p + theme_classic()
 if (args$bar) {
@@ -48,7 +60,7 @@ if (args$bar) {
     p <- p + geom_point()
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
     p <- p + ylab(paste("Percent coverage on", ref_genome))
-} else if (args$differential) {
+} else if (args$difference) {
     # Bar plot comparing the first alignment to every other alignment.
     if (!is.null(args$labels)) {
         first_alignment_name <- args$labels[[1]]
@@ -63,7 +75,7 @@ if (args$bar) {
     p <- p + geom_bar(position="dodge", stat="identity", width=rel(0.5))
     p <- p + scale_fill_brewer(type="qual", palette="Dark2")
     p <- p + ylab(paste("Difference in percent coverage relative to", first_alignment_name))
-    p <- p + ggtitle(paste("Differential coverage on genome", ref_genome))
+    p <- p + ggtitle(paste("Difference in coverage on genome", ref_genome))
 } else {
     # Grouped line plot showing each genome's coverage among the alignments.
     if (!is.null(args$cladeMap)) {
