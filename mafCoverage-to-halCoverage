@@ -1,0 +1,58 @@
+#!/usr/bin/env python
+"""
+Take in a mafCoverage (from mafTools) file, and spit out an equivalent coverage file in the halCoverage format.
+"""
+from argparse import ArgumentParser
+import sys
+
+def parseMafCoverage(mafCoverage):
+    """
+    Takes in a mafCoverage file-like-object. Returns a "coverage dict"
+    and the reference genome.
+
+    The "coverage dict" maps from genome to a tuple:
+    (number of bases covered once, number of bases covered twice).
+    """
+    coverageDict = {}
+    for line in mafCoverage:
+        line = line.strip()
+        if len(line) == 0 or line[0] == '#':
+            continue
+        refGenome, queryGenome, refLen, coveragePct = line.split()
+        refLen = int(refLen)
+        coveragePct = float(coveragePct)
+        # get the coverage in bases rather than %
+        coverage = int(coveragePct * refLen)
+        if refGenome == queryGenome:
+            # Special case. The meaning of this "coverage" is actually
+            # duplicated sequence. So the entire genome is covered 1
+            # time, and the "coverage" returned by mafCoverage is the
+            # amount covered 2 times.
+            coverageDict[queryGenome] = (refLen, coverage)
+        else:
+            # Usually the coverage is just the number of sites covered
+            # 1 or more times.
+            coverageDict[queryGenome] = (coverage, 0)
+    return coverageDict, refGenome
+
+def outputHalCoverage(coverageDict, refGenome, out):
+    out.write("Genome, sitesCovered1Times, sitesCovered2Times\n")
+    # Important to write the refGenome first, because conventionally
+    # it comes first
+    out.write(", ".join(map(str, [refGenome, coverageDict[refGenome][0], coverageDict[refGenome][1]])) + "\n")
+    for queryGenome in coverageDict:
+        if queryGenome == refGenome:
+            # Already written
+            continue
+        out.write(", ".join(map(str, [queryGenome, coverageDict[queryGenome][0], coverageDict[queryGenome][1]])) + "\n")
+
+def main():
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument('mafCoverage', help='mafCoverage input file')
+    opts = parser.parse_args()
+    with open(opts.mafCoverage) as f:
+        coverageDict, refGenome = parseMafCoverage(f)
+    outputHalCoverage(coverageDict, refGenome, sys.stdout)
+
+if __name__ == '__main__':
+    main()
