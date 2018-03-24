@@ -12,6 +12,7 @@ parser$add_argument('--cladeMap', help = 'Clade map file describing how to group
 parser$add_argument('--bar', action = 'store_true', default = F, help = 'Create a faceted bar graph instead of line graph')
 parser$add_argument('--scatterplot', action = 'store_true', default = F, help = 'Create a faceted scatterplot instead of line graph')
 parser$add_argument('--difference', action = 'store_true', default = F, help = 'Plot the difference, with respect to the first coverage file, of the other coverage files')
+parser$add_argument('--textSize', type = 'integer', default = theme_classic()$text$size, help = 'Base text size')
 args <- parser$parse_args()
 
 # Parse the coverage files.
@@ -46,7 +47,7 @@ if (!is.null(args$cladeMap)) {
 }
 glimpse(coverage_df)
 p <- ggplot(coverage_df, aes(x=Alignment, y=PercentCoverage))
-p <- p + theme_classic()
+p <- p + theme_classic(base_size = args$textSize)
 if (args$bar) {
     # Simple bar plot
     p <- p + facet_wrap( ~ Genome)
@@ -71,7 +72,7 @@ if (args$bar) {
     coverage_df <- left_join(coverage_df, first_alignment_coverage, by="Genome")
     coverage_df <- subset(coverage_df, Alignment != first_alignment_name & Genome != ref_genome)
     coverage_df$DifferentialPercentCoverage <- coverage_df$PercentCoverage - coverage_df$firstAlignmentPercentCoverage
-    p <- ggplot(coverage_df, aes(x=Genome, y=DifferentialPercentCoverage, fill=Alignment)) + theme_classic()
+    p <- ggplot(coverage_df, aes(x=Genome, y=DifferentialPercentCoverage, fill=Alignment)) + theme_classic(base_size = args$textSize)
     p <- p + geom_bar(position="dodge", stat="identity", width=rel(0.5))
     p <- p + scale_fill_brewer(type="qual", palette="Dark2")
     p <- p + ylab(paste("Difference in percent coverage relative to", first_alignment_name))
