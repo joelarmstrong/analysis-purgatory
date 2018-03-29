@@ -12,21 +12,33 @@ from collections import defaultdict
 
 import numpy as np
 import cvxpy
+from pandas import DataFrame
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.metrics import mean_squared_error
+from ggplot import *
+import matplotlib.pyplot as plt
 
 def fit_lm_never_underestimate(X, y):
     """Fit a linear model to the data, subject to the constraint that the
     linear model never underestimates the training points."""
     n = X.shape[1]    # Number of features
     m = X.shape[0]    # Number of examples
+    y = y.reshape((m,1))
+    print n, m
+    print repr(X), y
     B = cvxpy.Variable(n)
     # Must always be above the training points
-    constraints = [(X*B)[i] >= y[i] for i in xrange(m)]
-    # Minimize absolute error
-    objective = cvxpy.Minimize(cvxpy.sum_entries(X*B - y))
+    constraints = [X*B >= y]
+    objective = cvxpy.Minimize(cvxpy.sum_squares(X*B - y))
     problem = cvxpy.Problem(objective, constraints)
-    problem.solve()
+    data = problem.get_problem_data(cvxpy.ECOS)
+    print 'A', data['A']
+    print 'b', data['b']
+    print 'c', data['c']
+    print 'G', data['G'].todense()
+    print 'h', data['h']
+    problem.solve(solver=cvxpy.SCS, verbose=True, max_iters=200000)
+
     return B.value
 
 def parse_args():
@@ -46,28 +58,35 @@ def main():
             assert match is not None
             job = match.group(1)
             datum = json.loads(match.group(2))
+            if 'CactusBarEndAlignerWrapper' not in job:
+                continue
             # Now that we shrunk things, we only (probably) care about one feature
-            datum = {k: datum[k] for k in datum if k in ['MaxMemory', 'maxFlowerSize']}
+            datum = {k: datum[k] for k in datum if k in ['MaxMemory', 'maxEndSize']}
             # Give it extra headroom
-            datum['MaxMemory'] = int(match.group(3)) * (1.0 + args.headroom)
+            datum['MaxMemory'] = (int(match.group(3)) * (1.0 + args.headroom))/1e9
             jobData[job].append(datum)
 
     for job, data in jobData.iteritems():
         vec = DictVectorizer(sparse=False)
         y = np.array([d.pop('MaxMemory') for d in data])
         X = vec.fit_transform(data)
+        df = DataFrame({'x': X[:, 0], 'y': y})
         # Extend the data so we can fit an intercept
         X = np.concatenate([np.ones((X.shape[0], 1)), X], axis=1)
         B = fit_lm_never_underestimate(X, y)
-        # y without headroom adjustment
+
+        p = ggplot(df, aes(x='x', y='y')) + geom_point() + geom_abline(intercept=np.asscalar(B[0]), slope=np.asscalar(B[1]))
+        p.show()
+
         reprediction = X.dot(B)
+        # y without headroom adjustment
         true_y = (y / (1.0 + args.headroom)).reshape(reprediction.shape)
         mse = mean_squared_error(true_y, reprediction)
         max_overestimate = max(reprediction - true_y)
         max_underestimate = max(true_y - reprediction)
         print 'Job %s: MSE: %s max overestimate: %sGiB max underestimate: %sGiB coef: %s' % \
             (job, mse,
-             max_overestimate/(1024*1024*1024), max_underestimate/(1024*1024*1024),
+             max_overestimate, max_underestimate,
              dict(zip(['intercept'] + vec.get_feature_names(), B)))
 
 if __name__ == '__main__':
