@@ -12,14 +12,19 @@ def get_f1(soup):
 
 def parse_args():
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument('xml', help='mafComparator XML output file')
+    parser.add_argument('xmls', help='mafComparator XML output file(s)', nargs='+')
     return parser.parse_args()
 
 def main():
     opts = parse_args()
-    with open(opts.xml) as f:
-        soup = BeautifulSoup(f, 'html.parser')
-        print get_f1(soup)
+    if len(opts.xmls) == 1:
+        # Only one file given: just print out the F1 score and nothing else.
+        with open(opts.xmls[0]) as f:
+            soup = BeautifulSoup(f, 'html.parser')
+            print get_f1(soup)
+    else:
+        # Multiple files given. 
+        pass
 
 if __name__ == '__main__':
     main()
