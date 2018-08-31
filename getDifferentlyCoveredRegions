@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -16,12 +16,12 @@ HAL2=$4
 
 MYTMP=$(mktemp -d)
 
-halStats --chromSizes "$TARGET_GENOME" "$HAL1" > "$MYTMP"/chrom.sizes
+halStats --chromSizes "$TARGET_GENOME" "$HAL1" | sort > "$MYTMP"/chrom.sizes
 
 for HAL in "$HAL1" "$HAL2"; do
     (halStats --bedSequences "$REF_GENOME" "$HAL" > "$MYTMP"/ref_"$(basename "$HAL")".bed
     halLiftover "$HAL" "$REF_GENOME" "$MYTMP"/ref_"$(basename "$HAL")".bed "$TARGET_GENOME" "$MYTMP"/target_"$(basename "$HAL")".bed
-    bedtools sort -i "$MYTMP"/target_"$(basename "$HAL")".bed | bedtools complement -i /dev/stdin -g "$MYTMP"/chrom.sizes > "$MYTMP"/"$(basename "$HAL")".bed) &
+    bedtools sort -i "$MYTMP"/target_"$(basename "$HAL")".bed | bedtools complement -i stdin -g "$MYTMP"/chrom.sizes > "$MYTMP"/"$(basename "$HAL")".bed) &
 done
 
 wait
