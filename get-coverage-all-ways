@@ -1,0 +1,16 @@
+#!/bin/bash
+set -o errexit
+set -o nounset
+set -o pipefail
+HAL=$1
+for genome in $(halStats --genomes "$HAL"); do
+    children=$(halStats --children "$genome" $HAL)
+    if [ -n "$children" ]; then
+        # Not a leaf genome
+        echo "skipping $genome"
+    else
+        halCoverage "$HAL" $genome > "${HAL}.coverage.${genome}" &
+        halCoverage "$HAL" $genome --collapse > "${HAL}.coverage.${genome}.collapsed" &
+    fi
+done
+wait
