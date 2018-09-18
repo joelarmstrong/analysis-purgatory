@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+import os
+import shutil
+import urllib
+
+from Bio import Entrez
+from argparse import ArgumentParser
+from subprocess import check_call
+
+Entrez.email = 'jcarmstr@ucsc.edu'
+
+def dl_assembly(accession, output_dir):
+    handle = Entrez.esearch(db='assembly', term=accession)
+    search_results = Entrez.read(handle)
+    handle.close()
+    ids = map(int, search_results['IdList'])
+    if len(ids) != 1:
+        raise RuntimeError("Expected 1 assembly with accession %s, got %s" % (accession, len(ids)))
+    id = ids[0]
+
+    # Now that we have the NCBI DB id corresponding to the accession,
+    # we can get the data we actually want.
+    handle = Entrez.efetch(db='assembly', id=id, rettype='docsum')
+    record = Entrez.read(handle, validate=False)
+    summary = record['DocumentSummarySet']['DocumentSummary'][0]
+    handle = Entrez.efetch(db='taxonomy', id=int(summary['SpeciesTaxid']), rettype='full', retmode='xml')
+    species_record = Entrez.read(handle)[0]
+    species_common_name = species_record.get('CommonName') or species_record.get('OtherNames', {}).get('GenbankCommonName') or species_record['ScientificName']
+
+    # Download the files.
+    ftp_url = summary['FtpPath_GenBank']
+    paths = ftp_url.split('/')
+    rm_out_url = ftp_url + '/' + paths[-1] + '_rm.out.gz'
+    fa_gz_url = ftp_url + '/' + paths[-1] + '_genomic.fna.gz'
+    rm_gz_path = os.path.join(output_dir, accession + '.rm.out.gz')
+    urllib.urlretrieve(rm_out_url, rm_gz_path)
+    urllib.urlcleanup() # Amazingly, py2.7 breaks if this is not included
+    fa_gz_path = os.path.join(output_dir, accession + '.fa.gz')
+    urllib.urlretrieve(fa_gz_url, fa_gz_path)
+
+    # Decompress, convert to 2bit for masking step, and convert back
+    # to fasta. This is all done using the Kent command-line tools,
+    # because it's actually much more awkward and error-prone to do it
+    # with the 2bit Python library.
+    check_call(['gzip', '-d', '-f', rm_gz_path])
+    check_call(['gzip', '-d', '-f', fa_gz_path])
+    fa_path = os.path.join(output_dir, accession + '.fa')
+    two_bit_path = os.path.join(output_dir, accession + '.2bit')
+    check_call(['faToTwoBit', fa_path, two_bit_path])
+    os.remove(fa_path)
+    rm_path = os.path.join(output_dir, accession + '.rm.out')
+    masked_two_bit_path = os.path.join(output_dir, accession + '.masked.2bit')
+    check_call(['twoBitMask', '-add', '-type=.out', two_bit_path, rm_path, masked_two_bit_path])
+    os.remove(two_bit_path)
+
+    # We want the final names to look like eastern_happy_GCA_900246225.3.*
+    dest_prefix = (species_common_name + '_' + accession).replace(' ', '_')
+    dest_fa_path = os.path.join(output_dir, dest_prefix + '.masked.fa')
+    dest_rm_path = os.path.join(output_dir, dest_prefix + '.rm.out')
+    check_call(['twoBitToFa', masked_two_bit_path, dest_fa_path])
+    os.rename(rm_path, dest_rm_path)
+
+def main():
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument('accession', help="Genbank accession")
+    parser.add_argument('output_dir', help="Directory to place files in")
+    opts = parser.parse_args()
+    dl_assembly(opts.accession, opts.output_dir)
+
+if __name__ == '__main__':
+    main()
