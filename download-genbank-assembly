@@ -49,6 +49,11 @@ def dl_assembly(accession, output_dir):
     check_call(['faToTwoBit', fa_path, two_bit_path])
     os.remove(fa_path)
     rm_path = os.path.join(output_dir, accession + '.rm.out')
+    # This is ridiculous, but we have to mess with the headers
+    # sometimes to get twoBitMask to recognize them. twoBitMask
+    # hardcodes the amount of padding spaces that it wants to see in
+    # the header--and that seems to vary among RepeatMasker versions.
+    check_call(['sed', '-i', '-E', 's/\s+SW\s+perc\s+perc/   SW  perc perc/g', rm_path])
     masked_two_bit_path = os.path.join(output_dir, accession + '.masked.2bit')
     check_call(['twoBitMask', '-add', '-type=.out', two_bit_path, rm_path, masked_two_bit_path])
     os.remove(two_bit_path)
@@ -58,6 +63,7 @@ def dl_assembly(accession, output_dir):
     dest_fa_path = os.path.join(output_dir, dest_prefix + '.masked.fa')
     dest_rm_path = os.path.join(output_dir, dest_prefix + '.rm.out')
     check_call(['twoBitToFa', masked_two_bit_path, dest_fa_path])
+    os.remove(masked_two_bit_path)
     os.rename(rm_path, dest_rm_path)
 
 def main():
