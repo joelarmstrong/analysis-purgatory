@@ -1,0 +1,9 @@
+[package]
+name = "c2h-bug-finder"
+version = "0.1.0"
+authors = ["Joel Armstrong <jcarmstr@ucsc.edu>"]
+edition = "2018"
+
+[dependencies]
+csv = "1"
+failure = "0.1"
