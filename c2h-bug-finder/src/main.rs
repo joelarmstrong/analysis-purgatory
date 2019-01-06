@@ -1,10 +1,11 @@
+use std::collections::HashSet;
+use std::env;
 use std::fmt;
+use std::fs::File;
 use std::io;
 use std::io::{Read, BufReader, Write};
-use std::fs::File;
-use std::env;
 use std::process::exit;
-use failure::{Fallible, bail, ResultExt};
+use failure::{Fallible, bail, ensure, ResultExt};
 use csv;
 
 fn main() {
@@ -22,7 +23,7 @@ fn main() {
 fn find(input: impl Read, path: &str) {
     match find_buggy_lines(input) {
         Ok(bugs) => {
-            if bugs.len() > 0 {
+            if !bugs.is_empty() {
                 eprintln!("Found {} bugs in file {}, lines:", bugs.len(), path);
                 for bug in bugs {
                     eprintln!("{}", bug);
@@ -69,7 +70,9 @@ impl fmt::Display for C2HData {
     }
 }
 
-fn fix_and_output(buf: &mut Vec<C2HLine>, start_after_bad_region: u64, output: &mut impl Write) -> Fallible<()> {
+/// Fix a region which ends in a buggy region. Return the names of the
+/// skipped bugged segments.
+fn fix_and_output(buf: &mut Vec<C2HLine>, start_after_bad_region: u64, output: &mut impl Write) -> Fallible<Vec<u64>> {
     let mut skip: Vec<bool> = vec![false; buf.len()];
     // Iterate backwards through the problematic region. Bad lines
     // will have a length field containing the true start position of
@@ -103,20 +106,34 @@ fn fix_and_output(buf: &mut Vec<C2HLine>, start_after_bad_region: u64, output: &
         }
         write!(output, "{}", buf[i].data)?;
     }
+    let removed = buf.iter()
+        .enumerate()
+        .filter(|(i, _)| skip[*i])
+        .map(|(_, l)| match l.data {
+            TopSegment { name, .. } => {
+                name.unwrap_or(0)
+            },
+            BottomSegment { name, .. } => {
+                name
+            },
+            _ => unreachable!(),
+        })
+        .collect();
     buf.clear();
-    Ok(())
+    Ok(removed)
 }
 
 fn fix(input: impl Read, output: &mut impl Write) -> Fallible<()> {
     let mut buf: Vec<C2HLine> = vec![];
     let mut prev_start = 0;
+    let mut removed_segments = HashSet::new();
     for result in get_iter(input)? {
         let c2h_line = result?;
         match c2h_line.data {
             BottomSegment { start, .. } | TopSegment { start, .. } => {
                 if start < prev_start {
                     // End of problem region. Go back through and fix what needs to be fixed.
-                    fix_and_output(&mut buf, start, output)?;
+                    removed_segments.extend(fix_and_output(&mut buf, start, output)?);
                 }
                 prev_start = start;
             },
@@ -126,6 +143,11 @@ fn fix(input: impl Read, output: &mut impl Write) -> Fallible<()> {
                     write!(output, "{}", item.data)?;
                 }
             }
+        }
+        if let TopSegment { name: Some(name), .. } = c2h_line.data {
+            // Ensure this isn't referencing a removed bottom segment.
+            ensure!(!removed_segments.contains(&name),
+                    "Top segment referenced removed bottom segment {}", name);
         }
         buf.push(c2h_line);
     }
@@ -347,5 +369,25 @@ a	4183562578850455571	830	1
 a	5176324821708937226	831	12
 a	7571113923563180379	843	351
 ");
+    }
+
+    /// Ensure a lost segment that is used later on causes a crash.
+    #[test]
+    fn test_fix_paranoia() {
+        let input = "s	'parent'	'parentChr'	1
+a	0	0	366
+a	4799148352916656454	366	14
+a	4799148352916656452	380	380
+a	4183562578850463929	760	1
+a	4183562578850463927	761	381
+a	4799148352916656457	381	2
+s	'child'	'childChr'	0
+a	0	1234	8675309	1
+a	1234	380	4799148352916656452	1
+a	1614	1	4183562578850463929	1
+";
+        let mut output = vec![];
+        let result = fix(input.as_bytes(), &mut output);
+        assert!(result.is_err());
     }
 }
