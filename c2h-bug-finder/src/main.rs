@@ -70,42 +70,40 @@ impl fmt::Display for C2HData {
 }
 
 fn fix_and_output(buf: &mut Vec<C2HLine>, start_after_bad_region: u64, output: &mut impl Write) -> Fallible<()> {
-    println!("fixing region that ends in good start pos {}", start_after_bad_region);
-    let mut in_region = false;
-    let mut next_pos = 0;
-    let mut prev_end = 0;
-    for mut item in buf.drain(..) {
-        match &mut item.data {
-            TopSegment { start: other_start, length: other_length, .. } | BottomSegment { start: other_start, length: other_length, .. } => {
-                if !in_region && *other_start + *other_length >= start_after_bad_region {
-                    // Beginning of problem region.
-                    in_region = true;
-                }
-                if in_region && next_pos != 0 {
-                    *other_start = next_pos;
-                    next_pos = 0;
-                    prev_end = *other_start + *other_length;
-                    write!(output, "{}", item.data)?;
-                } else if in_region {
-                    if *other_length == prev_end {
-                        // Extraneous, skip
-                        next_pos = *other_length;
-                    } else {
-                        *other_start = prev_end;
-                        prev_end = *other_start + *other_length;
-                        write!(output, "{}", item.data)?;
-                    }
+    let mut skip: Vec<bool> = vec![false; buf.len()];
+    // Iterate backwards through the problematic region. Bad lines
+    // will have a length field containing the true start position of
+    // the previous line, so they are easily detectable this way.
+    let mut true_start = start_after_bad_region;
+    for i in (0..buf.len()).rev() {
+        match buf[i].data {
+            TopSegment { start, length, .. } | BottomSegment { start, length, .. } => {
+                if length == true_start && start != 0 {
+                    // Bad line.
+                    skip[i] = true;
                 } else {
-                    prev_end = *other_start + *other_length;
-                    write!(output, "{}", item.data)?;
+                    // Good line.
+                    true_start -= length;
                 }
             }
-            NewSequence { .. } => {
-                write!(output, "{}", item.data)?;
-                prev_end = 0;
-            },
+            _ => {},
         }
     }
+
+    // Now that we know which lines are bad, we can go through in the
+    // forward direction and only output good lines, recalculating the
+    // true start position ourselves.
+    for i in (0..buf.len()).filter(|&i| !skip[i]) {
+        match &mut buf[i].data {
+            TopSegment { start, length, .. } | BottomSegment { start, length, .. } => {
+                *start = true_start;
+                true_start += *length;
+            }
+            _ => {},
+        }
+        write!(output, "{}", buf[i].data)?;
+    }
+    buf.clear();
     Ok(())
 }
 
@@ -279,6 +277,75 @@ a	2900458897514937147	43488	23
 a	2900458897514937150	43511	12
 a	2900458897514937153	43523	13
 a	2900458897514937156	43536	14
+");
+
+        // OK, this has to be the last way that things can get messed
+        // up
+        let input = "s	'birdAnc248'	'birdAnc248refChr2611'	1
+a	2633057669639824667	0	6
+a	8856750879689135289	6	4
+a	2633057669639824664	10	5
+a	7770820419539392828	15	18
+a	5176324821708937241	33	7
+a	5176324821708937239	40	40
+a	4183562578850455601	80	1
+a	4183562578850455599	81	41
+a	4183562578850455598	122	7
+a	4183562578850455596	129	48
+a	5176324821708937238	48	7
+a	7571113923563180385	55	54
+a	5176324821708937235	109	6
+a	5176324821708937232	115	7
+a	7571113923563180382	122	40
+a	5176324821708937229	162	8
+a	5176324821708937227	170	170
+a	4183562578850455595	340	67
+a	4183562578850455593	407	237
+a	4183562578850455592	644	25
+a	4183562578850455590	669	262
+a	4183562578850455589	931	339
+a	4183562578850455587	1270	601
+a	4183562578850455586	1871	26
+a	4183562578850455584	1897	627
+a	4183562578850455583	2524	19
+a	4183562578850455581	2543	646
+a	4183562578850455580	3189	31
+a	4183562578850455578	3220	677
+a	4183562578850455577	3897	98
+a	4183562578850455575	3995	775
+a	4183562578850455574	4770	55
+a	4183562578850455572	4825	830
+a	4183562578850455571	5655	1
+a	4183562578850455569	5656	831
+a	5176324821708937226	831	12
+a	7571113923563180379	843	351";
+        let mut output = vec![];
+        fix(input.as_bytes(), &mut output).unwrap();
+        assert_eq!(from_utf8(&output).unwrap(), "s	'birdAnc248'	'birdAnc248refChr2611'	1
+a	2633057669639824667	0	6
+a	8856750879689135289	6	4
+a	2633057669639824664	10	5
+a	7770820419539392828	15	18
+a	5176324821708937241	33	7
+a	4183562578850455601	40	1
+a	4183562578850455598	41	7
+a	5176324821708937238	48	7
+a	7571113923563180385	55	54
+a	5176324821708937235	109	6
+a	5176324821708937232	115	7
+a	7571113923563180382	122	40
+a	5176324821708937229	162	8
+a	4183562578850455595	170	67
+a	4183562578850455592	237	25
+a	4183562578850455589	262	339
+a	4183562578850455586	601	26
+a	4183562578850455583	627	19
+a	4183562578850455580	646	31
+a	4183562578850455577	677	98
+a	4183562578850455574	775	55
+a	4183562578850455571	830	1
+a	5176324821708937226	831	12
+a	7571113923563180379	843	351
 ");
     }
 }
