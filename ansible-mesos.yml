@@ -1,0 +1,145 @@
+- name: Create EC2 instance(s)
+  hosts: localhost
+  remote_user: ubuntu
+  gather_facts: False
+  vars:
+    keypair: jcarmstr@ucsc.edu
+    instance_type: m5.12xlarge
+    instance_name: ansible-mesos-maf
+    spot_price: 0.9
+    security_group: launch-wizard-1
+    subnet: subnet-0fa07123
+    image: ami-09677e0a6b14905b0
+    region: us-east-1
+    num_workers: 2
+    
+  tasks:
+    - name: Launch node instance(s)
+      ec2:
+         spot_price: "{{ spot_price }}"
+         spot_wait_timeout: 300
+         key_name: "{{ keypair }}"
+         group: "{{ security_group }}"
+         instance_type: "{{ instance_type }}"
+         image: "{{ image }}"
+         wait: true
+         region: "{{ region }}"
+         instance_tags:
+           Owner: "{{ keypair }}"
+           Name: "{{ instance_name }}"
+         count: "{{ num_workers }}"
+         vpc_subnet_id: "{{ subnet }}"
+         assign_public_ip: yes
+      register: ec2
+
+    - name: Add new instance to host group
+      add_host:
+        hostname: "{{ item.public_ip }}"
+        groups:
+          - launched
+        ansible_user: ubuntu
+        host_key_checking: false
+      with_items: "{{ ec2.instances }}"
+
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        state: started
+        delay: 10
+        timeout: 320
+      with_items: "{{ ec2.instances }}"
+
+- name: Add python so ansible stops whining
+  hosts: launched
+  gather_facts: false
+  tasks:
+    - name: Configure apt
+      raw: "sudo apt update && sudo apt install -y python"
+
+- name: Build parasol
+  hosts: launched
+  vars:
+    packages:
+      - build-essential
+      - libz-dev
+      - libpng-dev
+      - libssl-dev
+      - uuid-dev
+      - git
+    para_hub_ip: '172.31.70.98'
+  tasks:
+    - name: Add apt dependencies
+      become: true
+      apt:
+        name: "{{ packages }}"
+    - name: Build kent tools
+      shell: |
+        set -o errexit
+        git clone https://github.com/ucscgenomebrowser/kent.git
+        mkdir ~/bin
+        cd kent/src/lib
+        MACHTYPE=x86-64 make -j 8
+        cd ../htslib
+        MACHTYPE=x86-64 make -j 8
+        cd ../parasol
+        MACHTYPE=x86-64 make -j 8 userApps
+        sudo cp ~/bin/x86-64/para* /usr/bin/
+    - name: Copy systemd unit file
+      become: true
+      copy:
+        content: |
+          [Unit]
+          After=network.target
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/paraNode start -debug -hub={{ para_hub_ip }}
+          [Install]
+          WantedBy=multi-user.target
+        dest: '/etc/systemd/system/paraNode.service'
+    - name: Start paraNode
+      become: true
+      systemd:
+        daemon_reload: yes
+        state: started
+        name: paraNode
+
+- name: Build hal
+  hosts: launched
+  tasks:
+    - name: Install HDF5
+      become: true
+      vars:
+        packages:
+          - libhdf5-cpp-11
+          - libhdf5-dev
+      apt:
+        name: "{{ packages }}"
+    - name: Build hal tools
+      shell: |
+        set -o errexit
+        git clone https://github.com/comparativegenomicstoolkit/sonLib.git
+        cd sonLib
+        make
+        cd ..
+        git clone https://github.com/comparativegenomicstoolkit/hal.git
+        cd hal
+        git checkout flatbuf
+        make -j 8
+        sudo cp bin/* /usr/bin/
+
+- name: Mount EFS
+  hosts: launched
+  vars:
+    efs_id: fs-1f9464ff
+  tasks:
+    - name: Build EFS helper
+      shell: |
+        set -o errexit
+        git clone https://github.com/aws/efs-utils
+        cd efs-utils
+        ./build-deb.sh
+        sudo apt-get -y install ./build/amazon-efs-utils*deb
+    - name: Mount EFS on /efs
+      become: true
+      shell: "mkdir /efs && mount -t efs {{ efs_id }}:/ /efs && sudo chown ubuntu /efs"
