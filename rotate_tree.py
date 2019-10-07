@@ -17,7 +17,8 @@ def rotate(node, label):
 if __name__ == '__main__':
     parser = ArgumentParser(description=__doc__)
     parser.add_argument('newick_file')
+    parser.add_argument('label')
     opts = parser.parse_args()
     tree = newick.read(opts.newick_file)[0]
-    rotate(tree)
+    rotate(tree, opts.label)
     print(newick.dumps(tree))

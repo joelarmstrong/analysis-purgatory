@@ -14,8 +14,8 @@ def dl_assembly(accession, output_dir):
     search_results = Entrez.read(handle)
     handle.close()
     ids = map(int, search_results['IdList'])
-    if len(ids) != 1:
-        raise RuntimeError("Expected 1 assembly with accession %s, got %s" % (accession, len(ids)))
+    # if len(ids) != 1:
+    #     raise RuntimeError("Expected 1 assembly with accession %s, got %s" % (accession, len(ids)))
     id = ids[0]
 
     # Now that we have the NCBI DB id corresponding to the accession,

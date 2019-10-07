@@ -1,0 +1,173 @@
+# variables to change for your workflow:
+# - keypair
+# - security_group
+# - subnet
+# - instance_type (may want to debug with smaller instances to start)
+# - image, if not running in us-west-2
+# - num_workers (to launch multiple at once)
+# - efs_id (in a stanza further down in the file)
+
+- name: Create EC2 instance(s)
+  hosts: localhost
+  remote_user: ubuntu
+  gather_facts: False
+  vars:
+    keypair: jcarmstr@ucsc.edu
+    instance_type: m5.12xlarge
+    instance_name: ansible-mesos-cat
+    spot_price: 0.90
+    security_group: launch-wizard-16
+    subnet: subnet-9b98e0d2
+    image: ami-082fd9a18128c9e8c #ami-0f26d4c9992650142 # 16.04 b/c mesos doesn't have package for 18.04 (?!?)
+    region: us-west-2
+    num_workers: 1
+    
+  tasks:
+    - name: Launch node instance(s)
+      ec2:
+         spot_price: "{{ spot_price }}"
+         spot_wait_timeout: 300
+         key_name: "{{ keypair }}"
+         group: "{{ security_group }}"
+         instance_type: "{{ instance_type }}"
+         image: "{{ image }}"
+         wait: true
+         region: "{{ region }}"
+         instance_tags:
+           Owner: "{{ keypair }}"
+           Name: "{{ instance_name }}"
+         count: "{{ num_workers }}"
+         volumes:
+           - device_name: /dev/sda1
+             volume_type: gp2
+             volume_size: 700
+         vpc_subnet_id: "{{ subnet }}"
+         assign_public_ip: yes
+      register: ec2
+
+    - name: Add new instance to host group
+      add_host:
+        hostname: "{{ item.public_ip }}"
+        groups:
+          - launched
+        ansible_user: ubuntu
+        host_key_checking: false
+      with_items: "{{ ec2.instances }}"
+
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        state: started
+        delay: 10
+        timeout: 320
+      with_items: "{{ ec2.instances }}"
+
+- name: Add python so ansible stops whining
+  hosts: launched
+  gather_facts: false
+  tasks:
+    - name: Configure apt
+      raw: "sudo apt update && sudo apt install -y python2.7 && sudo ln -s /usr/bin/python2.7 /usr/bin/python"
+
+- name: Build and launch mesos agents
+  hosts: launched
+  vars:
+    packages:
+      - git
+      - tar
+      - wget
+      - git
+      - openjdk-8-jdk
+      - autoconf
+      - libtool
+      - build-essential
+      - python-dev
+      - python-six
+      - python-virtualenv
+      - libcurl4-nss-dev
+      - libsasl2-dev
+      - libsasl2-modules
+      - maven
+      - libapr1-dev
+      - libsvn-dev
+      - zlib1g-dev
+      - iputils-ping
+    mesos_master: '172.31.34.137:5050'
+  tasks:
+    - name: Add apt dependencies
+      become: true
+      apt:
+        name: "{{ packages }}"
+    - name: Download and build Mesos
+      become: true
+      shell: |
+        set -o errexit
+        # apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv DF7D54CBE56151BF
+        # echo "deb http://repos.mesosphere.com/ubuntu xenial main" > /etc/apt/sources.list.d/mesosphere.list
+        # apt-get -y update
+        # apt-get -y install mesos
+        # manual build
+        apt remove -y openjdk-11-*
+        . /etc/environment
+        wget http://www.apache.org/dist/mesos/1.7.2/mesos-1.7.2.tar.gz
+        tar xzvf mesos-1.7.2.tar.gz
+        cd mesos-1.7.2
+        mkdir build
+        cd build
+        ../configure
+        make -j 8 V=0
+        make install
+    - name: Copy systemd unit file
+      become: true
+      copy:
+        content: |
+          [Unit]
+          After=network.target
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/sbin/mesos-slave --master={{ mesos_master }} --port=5051 --work_dir=/tmp
+          [Install]
+          WantedBy=multi-user.target
+        dest: '/etc/systemd/system/mesos-agent.service'
+
+- name: Mount EFS
+  hosts: launched
+  vars:
+    efs_id: fs-a95a0a01
+  tasks:
+    - name: Build EFS helper
+      shell: |
+        set -o errexit
+        git clone https://github.com/aws/efs-utils
+        cd efs-utils
+        ./build-deb.sh
+        sudo apt-get -y install ./build/amazon-efs-utils*deb
+    - name: Mount EFS on /efs
+      become: true
+      shell: "mkdir /efs && mount -t efs {{ efs_id }}:/ /efs && sudo chown ubuntu /efs"
+
+# - name: Symlink shit
+#   hosts: launched
+#   tasks:
+#     - become: true
+#       shell: "ln -s /efs /mnt2"
+
+# - name: Make stupid toil workdir
+#   hosts: launched
+#   tasks:
+#     - become: true
+#       shell: "mkdir /tmp/tmp"
+#     - become: true
+#       shell: "chown ubuntu /tmp/tmp"
+#     - become: true
+#       shell: "cp /efs/bin/* /usr/local/bin || true"
+
+- name: Start mesos-agent
+  hosts: launched
+  tasks:
+    - become: true
+      systemd:
+        daemon_reload: yes
+        state: started
+        name: mesos-agent

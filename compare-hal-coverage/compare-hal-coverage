@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 if (!require("pacman")) install.packages("pacman", repos = "https://cloud.r-project.org/")
-pacman::p_load(argparse, ggplot2, dplyr)
+pacman::p_load(argparse, ggplot2, dplyr, tidyr)
 
 # Parse arguments.
 parser <- ArgumentParser(description = 'Plot a comparison between multiple coverage files produced by halStats --coverage')
@@ -16,12 +16,14 @@ parser$add_argument('--textSize', type = 'integer', default = theme_classic()$te
 args <- parser$parse_args()
 
 # Parse the coverage files.
-coverage_dfs <- sapply(args$coverage, function(x) { read.csv(x, header=T) }, simplify=F)
+coverage_dfs <- sapply(args$coverage, function(x) { coverage_df <- read.csv(x, header=T)
+    ref_genome <- coverage_df$Genome[1]
+    ref_genome_len <- coverage_df$"sitesCovered1Times"[1]
+    coverage_df$PercentCoverage <- coverage_df$"sitesCovered1Times" / ref_genome_len * 100
+    coverage_df
+ }, simplify=F)
 coverage_df <- bind_rows(coverage_dfs, .id = "Alignment")
-
 ref_genome <- coverage_df$Genome[1]
-ref_genome_len <- coverage_df$"sitesCovered1Times"[1]
-coverage_df$PercentCoverage <- coverage_df$"sitesCovered1Times" / ref_genome_len * 100
 
 # Apply the labels, if any
 if (!is.null(args$labels)) {
@@ -52,15 +54,15 @@ if (args$bar) {
     # Simple bar plot
     p <- p + facet_wrap( ~ Genome)
     p <- p + geom_bar(position="dodge", stat="identity")
+    p <- p + geom_text(aes(x=Alignment, y=PercentCoverage, label=PercentCoverage), vjust=0, size=3)
     p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
     p <- p + ylab(paste("Percent coverage on", ref_genome))
 } else if (args$scatterplot) {
-    # Simple scatter plot. The advantage over the bar plot is that the
-    # y axis isn't forced to start at 0.
-    p <- p + facet_wrap( ~ Genome, scales="free_y")
+    glimpse(spread(coverage_df, Alignment, PercentCoverage))
+    write.csv(coverage_df, "foo.Todus.csv")
+    p <- ggplot(coverage_df, aes())
+    p <- p + theme_classic(base_size = args$textSize)
     p <- p + geom_point()
-    p <- p + scale_x_discrete(limits=unique(coverage_df$Alignment))
-    p <- p + ylab(paste("Percent coverage on", ref_genome))
 } else if (args$difference) {
     # Bar plot comparing the first alignment to every other alignment.
     if (!is.null(args$labels)) {

@@ -1,0 +1,19 @@
+diff --git a/src/parasol/paraNode/paraNode.c b/src/parasol/paraNode/paraNode.c
+index ade2c75a14..ad8073d6a1 100644
+--- a/src/parasol/paraNode/paraNode.c
++++ b/src/parasol/paraNode/paraNode.c
+@@ -369,12 +369,12 @@ if ((grandChildId = forkOrDie()) == 0)
+ 	}
+     struct rlimit rlim;
+     rlim.rlim_cur = rlim.rlim_max = memLimit;
+-    if (setrlimit(RLIMIT_DATA, &rlim) < 0)
++    if (0)
+ 	logWarn("setrlimit failed with RLIMIT_DATA rlim_cur=%lld rlim_max=%lld"
+ 	    , (long long) rlim.rlim_cur , (long long) rlim.rlim_max); 
+     // although RLIMIT_AS is not supported/enforced on all platforms,
+     // it is useful for linux and some other unix OSes. 
+-    if (setrlimit(RLIMIT_AS, &rlim) < 0)
++    if (0)
+ 	logWarn("setrlimit failed with RLIMIT_AS rlim_cur=%lld rlim_max=%lld"
+ 	    , (long long) rlim.rlim_cur , (long long) rlim.rlim_max); 
+ 
