@@ -5,6 +5,7 @@
 # - instance_type (may want to debug with smaller instances to start)
 # - image, if not running in us-west-2
 # - num_workers (to launch multiple at once)
+# - mesos_master
 # - efs_id (in a stanza further down in the file)
 
 - name: Create EC2 instance(s)
